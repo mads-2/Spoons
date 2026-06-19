@@ -3,6 +3,10 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.10.0
+- Untracked days: mark a day untracked (no expectations); excluded from all analytics, shown labeled in history.
+- Insights history stays visible even when a range has no tracked days.
+
 ## 0.9.0
 - Insights: separate DRAINS and GAINS breakdown bars (mental vs physical); physical now a darker saturated blue.
 - Per-day chart relabeled 'spent vs gained · by day'.

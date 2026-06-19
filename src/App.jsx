@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.9.0";
+export const APP_VERSION = "0.10.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -184,7 +184,7 @@ export default function App() {
       const m = (await sget("meta:v1")) || { version: 1, defaultStart: DEFAULT_START };
       let d = await sget(dayKey());
       if (!d) {
-        d = { v: 1, date: dayKey().slice(4), start: m.defaultStart, startNote: "", events: [] };
+        d = { v: 1, date: dayKey().slice(4), start: m.defaultStart, startNote: "", untracked: false, events: [] };
         await sset(dayKey(), d);
       }
       setMeta(m);
@@ -240,6 +240,9 @@ export default function App() {
   async function saveStartNote() {
     await persist({ ...day, startNote: startNoteDraft });
   }
+  async function setUntracked(val) {
+    await persist({ ...day, untracked: val });
+  }
   async function exportData() {
     const keys = await slist("day:");
     const out = { exportedAt: new Date().toISOString(), version: 1, days: {} };
@@ -284,6 +287,17 @@ export default function App() {
 
         {view === "track" ? (
           <main style={S.main}>
+            {day && day.untracked ? (
+              <div style={S.untrackedPanel}>
+                <p style={S.untrackedMsg}>
+                  Untracked day. No expectations here — forgetting a day costs nothing.
+                </p>
+                <button style={S.action} onClick={() => setUntracked(false)}>
+                  track today
+                </button>
+              </div>
+            ) : (
+              <>
             <SpoonCluster level={level} max={max} />
 
             <div style={{ textAlign: "center", marginTop: 6 }}>
@@ -291,15 +305,20 @@ export default function App() {
                 {level}
                 <span style={S.countOf}> / {max}</span>
               </div>
-              <button
-                style={S.ofLine}
-                onClick={() => {
-                  if (!adjusting) setStartNoteDraft((day && day.startNote) || "");
-                  setAdjusting((v) => !v);
-                }}
-              >
-                adjust today’s start
-              </button>
+              <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+                <button
+                  style={S.ofLine}
+                  onClick={() => {
+                    if (!adjusting) setStartNoteDraft((day && day.startNote) || "");
+                    setAdjusting((v) => !v);
+                  }}
+                >
+                  adjust start
+                </button>
+                <button style={S.ofLine} onClick={() => setUntracked(true)}>
+                  mark untracked
+                </button>
+              </div>
             </div>
 
             {adjusting && (
@@ -373,6 +392,8 @@ export default function App() {
                 <button style={S.enter} onClick={saveNote}>enter</button>
                 <button style={S.skipBtn} onClick={() => setEditNote(false)}>skip</button>
               </div>
+            )}
+              </>
             )}
           </main>
         ) : (
@@ -602,11 +623,11 @@ function Insights({ today }) {
       const recs = [];
       for (const k of keys) {
         const d = await sget(k);
-        if (d) recs.push({ key: k, date: k.slice(4), start: d.start, startNote: d.startNote || "", events: d.events || [] });
+        if (d) recs.push({ key: k, date: k.slice(4), start: d.start, startNote: d.startNote || "", untracked: d.untracked || false, events: d.events || [] });
       }
       if (today) {
         const tk = "day:" + new Date().toLocaleDateString("en-CA");
-        const tRec = { key: tk, date: tk.slice(4), start: today.start, startNote: today.startNote || "", events: today.events || [] };
+        const tRec = { key: tk, date: tk.slice(4), start: today.start, startNote: today.startNote || "", untracked: today.untracked || false, events: today.events || [] };
         const i = recs.findIndex((r) => r.key === tk);
         if (i >= 0) recs[i] = tRec;
         else recs.push(tRec);
@@ -625,7 +646,8 @@ function Insights({ today }) {
 
   const cut = rangeCutoff(range);
   const inRange = days.filter((d) => !cut || d.date >= cut);
-  const a = aggregate(inRange);
+  const tracked = inRange.filter((d) => !d.untracked);
+  const a = aggregate(tracked);
 
   return (
     <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left", gap: 18 }}>
@@ -637,12 +659,14 @@ function Insights({ today }) {
         ))}
       </div>
 
-      {a.nDays === 0 ? (
+      {inRange.length === 0 ? (
         <p style={{ color: C.inkSoft, fontSize: 14, lineHeight: 1.6 }}>
-          Nothing logged in this window yet.
+          Nothing in this window yet.
         </p>
       ) : (
         <>
+          {a.nDays > 0 && (
+          <>
           <div style={styles.mirror}>
             <div style={styles.mirrorRow}>
               <span>spent</span>
@@ -660,7 +684,7 @@ function Insights({ today }) {
 
           <div>
             <div style={styles.smallLabel}>spent vs gained · by day</div>
-            <SpendGainChart days={[...inRange].reverse().slice(-14)} />
+            <SpendGainChart days={[...tracked].reverse().slice(-14)} />
             <div style={styles.legend}>
               <span>
                 <i style={{ ...styles.swatch, background: C.spentBar }} /> spent
@@ -684,6 +708,8 @@ function Insights({ today }) {
               <span>{a.zero}</span>
             </div>
           </div>
+          </>
+          )}
 
           <div>
             <div style={styles.smallLabel}>history</div>
@@ -698,7 +724,7 @@ function Insights({ today }) {
                       {isOpen ? "▾" : "▸"} {fmtDay(d.date)}
                     </span>
                     <span style={{ color: C.inkSoft }}>
-                      spent {sp} · back {bk}
+                      {d.untracked ? "untracked" : `spent ${sp} · back ${bk}`}
                     </span>
                   </button>
                   {isOpen && (
@@ -839,6 +865,21 @@ const styles = {
     lineHeight: 1.5,
     color: C.ink,
     marginTop: 8,
+  },
+  untrackedPanel: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 18,
+    width: "100%",
+    padding: "44px 0",
+  },
+  untrackedMsg: {
+    maxWidth: 300,
+    textAlign: "center",
+    fontSize: 15,
+    lineHeight: 1.5,
+    color: C.inkSoft,
   },
   actions: { display: "flex", flexDirection: "column", gap: 12, width: "100%", marginTop: 18 },
   action: {
