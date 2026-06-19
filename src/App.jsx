@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.16.0";
+export const APP_VERSION = "0.4.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -12,18 +12,11 @@ const C = {
   inkSoft: "#4F5B66",
   inkFaint: "#74818D",
   accent: "#7C93A6",
-  chipPhys: "#BFD0E0",
-  chipMent: "#C9CDD2",
-  spentBar: "#D9ABAB",
-  gainBar: "#A9C7A5",
-  spentBtn: "#EFDFDF",
-  gainBtn: "#E1ECDD",
-  physBar: "#5E8CB5",
 };
 
-/* pixel spoon tones — paler, matched to reference; medium slate shadow, light centers */
-const SPOON_FILL = { hi: "#EDF1F5", li: "#D4DBE4", mid: "#AEB9C9", dk: "#848FA6" };
-const SPOON_SPENT = { hi: "#E2E5E9", li: "#D2D6DC", mid: "#C0C6CE", dk: "#A7AEBB" };
+/* pixel spoon tones */
+const SPOON_FILL = { out: "#3F4C57", hi: "#E3E9EF", mid: "#A9B7C4", sh: "#71828F" };
+const SPOON_SPENT = { out: "#8B97A2", hi: "#C9D1D9", mid: "#C2CBD3", sh: "#B6C0C9" };
 
 /* ── categories (states, broad — specifics live in the note) ── */
 const DRAINS = {
@@ -46,13 +39,14 @@ const DRAINS = {
   ],
 };
 const BUILDS = {
-  physical: ["movement", "fun activities", "resting", "other"],
+  physical: ["movement", "eating / drinking", "fun activities", "other (physical)"],
   mental: [
     "personal relationships",
+    "resting",
     "play",
     "having a win",
     "being inspired",
-    "other",
+    "other (mental)",
   ],
 };
 
@@ -109,37 +103,46 @@ function levelOf(day) {
 }
 
 /* ── pixel spoon (the signature element) ─────────────────────── */
-const SP = 20;
-const SPRITE = [
-  "              HLLLH ",
-  "            HHLDMMLH",
-  "           HMMMDDMML",
-  "          HLDDDDDMML",
-  "         HMDDDMMMMLH",
-  "         HMDDMMMMLLL",
-  "         HMDMMMMMLLL",
-  "         HMDMMMMHML ",
-  "        HLLLHHHHMH  ",
-  "       HHHLDDMMMH   ",
-  "      HHLLMMMMLL    ",
-  "     HHHLML         ",
-  "    HHLLDH          ",
-  "   HHLLMH           ",
-  "  HHLLML            ",
-  " HHHLMM             ",
-  "HHHLDH              ",
-  "LLLDH               ",
-  "MMMM                ",
-  "MDM                 ",
-];
-const TONE = { H: "hi", L: "li", M: "mid", D: "dk" };
-const SPOON_CELLS = [];
-SPRITE.forEach((row, y) => {
-  for (let x = 0; x < row.length; x++) {
-    const t = TONE[row[x]];
-    if (t) SPOON_CELLS.push({ x, y, tone: t });
+const SP = 16;
+const SPOON_CELLS = (() => {
+  const cx = 10.3,
+    cy = 4.6,
+    rx = 4.2,
+    ry = 3.9;
+  const hx1 = 8.3,
+    hy1 = 6.2,
+    hx2 = 2.3,
+    hy2 = 13.2,
+    hw = 1.3;
+  const inBowl = (x, y) =>
+    (x - cx) ** 2 / (rx * rx) + (y - cy) ** 2 / (ry * ry) <= 1;
+  const nearHandle = (x, y) => {
+    const dx = hx2 - hx1,
+      dy = hy2 - hy1;
+    const t = Math.max(
+      0,
+      Math.min(1, ((x - hx1) * dx + (y - hy1) * dy) / (dx * dx + dy * dy))
+    );
+    return Math.hypot(x - (hx1 + t * dx), y - (hy1 + t * dy)) <= hw;
+  };
+  const on = (x, y) => inBowl(x + 0.5, y + 0.5) || nearHandle(x + 0.5, y + 0.5);
+  const cells = [];
+  for (let y = 0; y < SP; y++) {
+    for (let x = 0; x < SP; x++) {
+      if (!on(x, y)) continue;
+      const edge =
+        !on(x - 1, y) || !on(x + 1, y) || !on(x, y - 1) || !on(x, y + 1);
+      let tone;
+      if (edge) tone = "out";
+      else {
+        const light = cx - (x + 0.5) + (cy - (y + 0.5));
+        tone = light > 1.2 ? "hi" : light > -1.4 ? "mid" : "sh";
+      }
+      cells.push({ x, y, tone });
+    }
   }
-});
+  return cells;
+})();
 
 function SpoonIcon({ filled, px = 3 }) {
   const map = filled ? SPOON_FILL : SPOON_SPENT;
@@ -167,17 +170,15 @@ function SpoonCluster({ level, max }) {
       aria-label={`${level} of ${max} spoons remaining`}
     >
       {Array.from({ length: max }).map((_, i) => (
-        <SpoonIcon key={i} filled={i < filled} px={2} />
+        <SpoonIcon key={i} filled={i < filled} />
       ))}
     </div>
   );
 }
 
 export default function App() {
-  const todayStr = new Date().toLocaleDateString("en-CA");
   const [loading, setLoading] = useState(true);
   const [meta, setMeta] = useState({ version: 1, defaultStart: DEFAULT_START });
-  const [activeDate, setActiveDate] = useState(todayStr);
   const [day, setDay] = useState(null);
   const [view, setView] = useState("track");
   const [sheet, setSheet] = useState(null);
@@ -185,112 +186,34 @@ export default function App() {
   const [editNote, setEditNote] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
-  const [startNoteDraft, setStartNoteDraft] = useState("");
-  const [dayNoteOpen, setDayNoteOpen] = useState(false);
-  const [dayNoteDraft, setDayNoteDraft] = useState("");
-  const [editTimeId, setEditTimeId] = useState(null);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [expFrom, setExpFrom] = useState("");
-  const [expTo, setExpTo] = useState("");
-
-  const isToday = activeDate === todayStr;
-
-  // settings, once
-  const indexRef = useRef(null);
 
   useEffect(() => {
     (async () => {
       const m = (await sget("meta:v1")) || { version: 1, defaultStart: DEFAULT_START };
-      setMeta(m);
-    })();
-  }, []);
-
-  // load (or one-time build) the per-day summary index that powers insights fast
-  useEffect(() => {
-    (async () => {
-      let idx = await sget("index:v2");
-      if (!idx) {
-        idx = { v: 1, days: {} };
-        const keys = new Set();
-        try {
-          (await slist("day:")).forEach((k) => keys.add(k));
-        } catch {}
-        for (let i = 0; i < 60; i++) keys.add("day:" + daysAgo(i));
-        const res = await Promise.all(
-          [...keys].map(async (k) => {
-            try {
-              const d = await sget(k);
-              return d ? [k.slice(4), d] : null;
-            } catch {
-              return null;
-            }
-          })
-        );
-        for (const r of res) if (r) idx.days[r[0]] = summarize(r[1]);
-        await sset("index:v2", idx);
-      }
-      indexRef.current = idx;
-    })();
-  }, []);
-
-  // load whichever day is active
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      let d = await sget("day:" + activeDate);
+      let d = await sget(dayKey());
       if (!d) {
-        d = { v: 1, date: activeDate, start: meta.defaultStart, startNote: "", dayNote: "", untracked: false, events: [] };
+        d = { v: 1, date: dayKey().slice(4), start: m.defaultStart, events: [] };
+        await sset(dayKey(), d);
       }
+      setMeta(m);
       setDay(d);
-      setLast(null);
-      setEditNote(false);
-      setAdjusting(false);
       setLoading(false);
     })();
-  }, [activeDate, meta.defaultStart]);
+  }, []);
 
   const persist = useCallback(async (next) => {
     setDay(next);
-    await sset("day:" + next.date, next);
-    let idx = indexRef.current;
-    if (!idx) idx = (await sget("index:v2")) || { v: 1, days: {} };
-    idx.days[next.date] = summarize(next);
-    indexRef.current = idx;
-    await sset("index:v2", idx);
+    await sset(dayKey(), next);
   }, []);
 
   const level = levelOf(day);
   const max = day ? day.start : meta.defaultStart;
 
-  function shiftDate(delta) {
-    const d = new Date(activeDate + "T00:00:00");
-    d.setDate(d.getDate() + delta);
-    const s = d.toLocaleDateString("en-CA");
-    if (s > todayStr) return; // no future
-    setActiveDate(s);
-  }
-
-  async function log(type, axis, category, amount = 1, opts) {
-    const now = new Date();
-    let ts;
-    let timeUnknown = false;
-    if (opts && opts.timeUnknown) {
-      ts = new Date(activeDate + "T00:00:00").toISOString();
-      timeUnknown = true;
-    } else if (opts && opts.timeStr) {
-      ts = new Date(activeDate + "T" + opts.timeStr + ":00").toISOString();
-    } else if (isToday) {
-      ts = now.toISOString();
-    } else {
-      const d = new Date(activeDate + "T00:00:00");
-      d.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
-      ts = d.toISOString();
-    }
+  async function log(type, axis, category, amount = 1) {
     const ev = {
       id: uid(),
       v: 1,
-      ts,
-      timeUnknown,
+      ts: new Date().toISOString(),
       type,
       axis,
       category,
@@ -304,37 +227,11 @@ export default function App() {
     setNoteDraft("");
     setEditNote(true);
   }
-  async function setEventTime(id, timeStr) {
-    const ts = new Date(activeDate + "T" + timeStr + ":00").toISOString();
-    await persist({
-      ...day,
-      events: day.events.map((e) => (e.id === id ? { ...e, ts, timeUnknown: false } : e)),
-    });
-    setEditTimeId(null);
-  }
-  async function setEventUnknown(id) {
-    await persist({
-      ...day,
-      events: day.events.map((e) => (e.id === id ? { ...e, timeUnknown: true } : e)),
-    });
-    setEditTimeId(null);
-  }
-  async function saveDayNote() {
-    await persist({ ...day, dayNote: dayNoteDraft });
-    setDayNoteOpen(false);
-  }
   async function setNote(id, note) {
     await persist({
       ...day,
       events: day.events.map((e) => (e.id === id ? { ...e, note } : e)),
     });
-  }
-  async function removeEvent(id) {
-    await persist({ ...day, events: day.events.filter((e) => e.id !== id) });
-    if (last && last.id === id) {
-      setLast(null);
-      setEditNote(false);
-    }
   }
   async function undo(id) {
     await persist({ ...day, events: day.events.filter((e) => e.id !== id) });
@@ -348,49 +245,16 @@ export default function App() {
   async function setStart(n) {
     await persist({ ...day, start: Math.max(0, n) });
   }
-  async function saveStartNote() {
-    await persist({ ...day, startNote: startNoteDraft });
-  }
-  async function setUntracked(val) {
-    await persist({ ...day, untracked: val });
-  }
-  async function runExport(from, to) {
-    const out = {
-      exportedAt: new Date().toISOString(),
-      version: 1,
-      from: from || null,
-      to: to || null,
-      days: {},
-    };
-    if (from && to) {
-      const cur = new Date(from + "T00:00:00");
-      const end = new Date(to + "T00:00:00");
-      while (cur <= end) {
-        const ds = cur.toLocaleDateString("en-CA");
-        try {
-          const rec = await sget("day:" + ds);
-          if (rec) out.days["day:" + ds] = rec;
-        } catch {}
-        cur.setDate(cur.getDate() + 1);
-      }
-    } else {
-      try {
-        const keys = await slist("day:");
-        for (const k of keys) {
-          const d = await sget(k);
-          if (d) out.days[k] = d;
-        }
-      } catch {}
-    }
-    const name =
-      from && to ? `spoons-${from}_to_${to}.json` : "spoons-export-full.json";
+  async function exportData() {
+    const keys = await slist("day:");
+    const out = { exportedAt: new Date().toISOString(), version: 1, days: {} };
+    for (const k of keys) out.days[k] = await sget(k);
     const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = name;
+    a.download = "spoons-export.json";
     a.click();
     URL.revokeObjectURL(a.href);
-    setExportOpen(false);
   }
 
   const S = styles;
@@ -417,7 +281,7 @@ export default function App() {
             <button style={S.navlink(view === "insights")} onClick={() => setView("insights")}>
               insights
             </button>
-            <button style={S.navlink(false)} onClick={() => setExportOpen(true)}>
+            <button style={S.navlink(false)} onClick={exportData}>
               export
             </button>
           </nav>
@@ -425,29 +289,6 @@ export default function App() {
 
         {view === "track" ? (
           <main style={S.main}>
-            <div style={S.dateNav}>
-              <button style={S.navArrow} onClick={() => shiftDate(-1)} aria-label="previous day">‹</button>
-              <button style={S.dateLabel} onClick={() => setActiveDate(todayStr)}>
-                {isToday ? "today" : fmtDay(activeDate)}
-              </button>
-              <button
-                style={{ ...S.navArrow, opacity: isToday ? 0.3 : 1 }}
-                disabled={isToday}
-                onClick={() => shiftDate(1)}
-                aria-label="next day"
-              >›</button>
-            </div>
-            {day && day.untracked ? (
-              <div style={S.untrackedPanel}>
-                <p style={S.untrackedMsg}>
-                  Untracked day. No expectations here — forgetting a day costs nothing.
-                </p>
-                <button style={S.action} onClick={() => setUntracked(false)}>
-                  track today
-                </button>
-              </div>
-            ) : (
-              <>
             <SpoonCluster level={level} max={max} />
 
             <div style={{ textAlign: "center", marginTop: 6 }}>
@@ -455,87 +296,20 @@ export default function App() {
                 {level}
                 <span style={S.countOf}> / {max}</span>
               </div>
-              <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
-                <button
-                  style={S.ofLine}
-                  onClick={() => {
-                    if (!adjusting) setStartNoteDraft((day && day.startNote) || "");
-                    setAdjusting((v) => !v);
-                  }}
-                >
-                  adjust start
-                </button>
-                <button style={S.ofLine} onClick={() => setUntracked(true)}>
-                  mark untracked
-                </button>
-              </div>
+              <button style={S.ofLine} onClick={() => setAdjusting((v) => !v)}>
+                adjust today’s start
+              </button>
             </div>
 
-            {!dayNoteOpen ? (
-              day && day.dayNote ? (
-                <button
-                  style={S.dayNoteShow}
-                  onClick={() => {
-                    setDayNoteDraft(day.dayNote || "");
-                    setDayNoteOpen(true);
-                  }}
-                >
-                  “{day.dayNote}”
-                </button>
-              ) : (
-                <button
-                  style={S.ofLine}
-                  onClick={() => {
-                    setDayNoteDraft((day && day.dayNote) || "");
-                    setDayNoteOpen(true);
-                  }}
-                >
-                  + note for the day
-                </button>
-              )
-            ) : (
-              <div style={S.adjustCol}>
-                <span style={{ color: C.inkSoft, fontSize: 13 }}>note for the day</span>
-                <input
-                  autoFocus
-                  value={dayNoteDraft}
-                  placeholder="how the day felt overall…"
-                  onChange={(e) => setDayNoteDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveDayNote();
-                  }}
-                  style={{ ...S.note, flex: "none", width: "100%", minWidth: 0 }}
-                />
-                <button className="pxbtn" style={S.next} onClick={saveDayNote}>
-                  done
-                </button>
-              </div>
-            )}
-
             {adjusting && (
-              <div style={S.adjustCol}>
+              <div style={S.adjust}>
                 <span style={{ color: C.inkSoft, fontSize: 13 }}>today’s start</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                   <button style={S.step} onClick={() => setStart(max - 1)}>−</button>
                   <span style={{ fontSize: 22, minWidth: 28, textAlign: "center" }}>{max}</span>
                   <button style={S.step} onClick={() => setStart(max + 1)}>+</button>
                 </div>
-                <input
-                  value={startNoteDraft}
-                  placeholder="note? (e.g. woke up depleted)"
-                  onChange={(e) => setStartNoteDraft(e.target.value)}
-                  onBlur={saveStartNote}
-                  style={{ ...S.note, flex: "none", width: "100%", minWidth: 0 }}
-                />
-                <button
-                  style={S.linkBtn}
-                  onClick={() => {
-                    saveStartNote();
-                    setAdjusting(false);
-                  }}
-                >
-                  done
-                </button>
+                <button style={S.linkBtn} onClick={() => setAdjusting(false)}>done</button>
               </div>
             )}
 
@@ -544,66 +318,27 @@ export default function App() {
             )}
 
             <div style={S.actions}>
-              <button
-                className="pxbtn"
-                style={{ ...S.action, background: C.spentBtn }}
-                onClick={() => setSheet("drain")}
-              >
-                Spent (−)
-              </button>
-              <button
-                className="pxbtn"
-                style={{ ...S.action, background: C.gainBtn }}
-                onClick={() => setSheet("build")}
-              >
-                Gained (+)
-              </button>
+              <button style={S.action} onClick={() => setSheet("drain")}>Spent (−)</button>
+              <button style={S.action} onClick={() => setSheet("build")}>Gained (+)</button>
             </div>
 
-            {day && day.events.length > 0 && (
-              <div style={S.entries}>
-                {[...day.events]
-                  .sort((x, y) => (x.ts < y.ts ? 1 : -1))
-                  .map((e) => (
-                    <div key={e.id}>
-                      <div style={S.entryRow}>
-                        <button
-                          style={S.entryTime}
-                          onClick={() => setEditTimeId(editTimeId === e.id ? null : e.id)}
-                        >
-                          {e.timeUnknown ? "?" : fmtTime(e.ts)}
-                        </button>
-                        <span style={{ minWidth: 26 }}>
-                          {e.type === "build" ? "+" : "−"}
-                          {e.amount}
-                        </span>
-                        <span style={{ flex: 1 }}>
-                          {e.category}
-                          {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
-                        </span>
-                        <button
-                          style={S.remove}
-                          onClick={() => removeEvent(e.id)}
-                          aria-label="remove entry"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      {editTimeId === e.id && (
-                        <div style={S.timeEditRow}>
-                          <input
-                            type="time"
-                            defaultValue={e.timeUnknown ? "" : new Date(e.ts).toTimeString().slice(0, 5)}
-                            onChange={(ev) => ev.target.value && setEventTime(e.id, ev.target.value)}
-                            style={S.timeInput}
-                          />
-                          <button style={S.skipBtn} onClick={() => setEventUnknown(e.id)}>
-                            set ?
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+            {last && (
+              <div style={S.undobar}>
+                <span style={{ color: C.inkSoft, fontSize: 13 }}>
+                  {last.type === "build" ? "Gained" : "Spent"} {last.amount} · {last.category}
+                </span>
+                <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                  <button
+                    style={S.mini}
+                    onClick={() => {
+                      setNoteDraft((last && last.note) || "");
+                      setEditNote(true);
+                    }}
+                  >
+                    note
+                  </button>
+                  <button style={S.miniUndo} onClick={() => undo(last.id)}>undo</button>
+                </div>
               </div>
             )}
             {last && editNote && (
@@ -623,112 +358,31 @@ export default function App() {
                 <button style={S.skipBtn} onClick={() => setEditNote(false)}>skip</button>
               </div>
             )}
-              </>
-            )}
           </main>
         ) : (
-          <Insights active={day} />
+          <Insights day={day} />
         )}
       </div>
 
       {sheet && (
         <Sheet
           mode={sheet}
-          askTime={!isToday}
           onClose={() => setSheet(null)}
-          onLog={(axis, cat, amount, opts) =>
-            log(sheet === "build" ? "build" : "drain", axis, cat, amount, opts)
+          onPick={(axis, cat, amount) =>
+            log(sheet === "build" ? "build" : "drain", axis, cat, amount)
           }
         />
-      )}
-
-      {exportOpen && (
-        <div style={styles.scrim} onClick={() => setExportOpen(false)}>
-          <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.handle} />
-            <div style={styles.sheetTitle}>export data</div>
-            <p style={styles.exportHint}>
-              A JSON file of your days. Pick a range, or take everything.
-            </p>
-
-            <div style={styles.exportQuick}>
-              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(6), todayStr)}>
-                last 7 days
-              </button>
-              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(29), todayStr)}>
-                last 30 days
-              </button>
-              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(89), todayStr)}>
-                last 90 days
-              </button>
-              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(364), todayStr)}>
-                last year
-              </button>
-            </div>
-
-            <div style={styles.exportCustom}>
-              <div className="seclabel" style={styles.smallLabel}>custom range</div>
-              <div style={styles.exportDates}>
-                <label style={styles.exportDateLabel}>
-                  from
-                  <input
-                    type="date"
-                    value={expFrom}
-                    max={expTo || todayStr}
-                    onChange={(e) => setExpFrom(e.target.value)}
-                    style={styles.dateInput}
-                  />
-                </label>
-                <label style={styles.exportDateLabel}>
-                  to
-                  <input
-                    type="date"
-                    value={expTo}
-                    min={expFrom || undefined}
-                    max={todayStr}
-                    onChange={(e) => setExpTo(e.target.value)}
-                    style={styles.dateInput}
-                  />
-                </label>
-              </div>
-              <button
-                className="pxbtn"
-                style={{ ...styles.exportBtn, opacity: expFrom && expTo ? 1 : 0.4 }}
-                disabled={!expFrom || !expTo}
-                onClick={() => runExport(expFrom, expTo)}
-              >
-                export range
-              </button>
-            </div>
-
-            <button className="pxbtn" style={styles.exportFull} onClick={() => runExport()}>
-              export everything
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );
 }
 
-function Sheet({ mode, onLog, onClose, askTime }) {
+function Sheet({ mode, onPick, onClose }) {
   const [amount, setAmount] = useState(1);
-  const [step, setStep] = useState("count"); // count | category | time
-  const [picked, setPicked] = useState(null);
-  const [timeStr, setTimeStr] = useState("");
+  const [step, setStep] = useState("count");
   const groups = mode === "build" ? BUILDS : DRAINS;
-  const order = ["mental", "physical"];
+  const order = mode === "build" ? ["physical", "mental"] : ["mental", "physical"];
   const heading = mode === "build" ? "Gained" : "Spent";
-
-  function choose(axis, cat) {
-    if (askTime) {
-      setPicked({ axis, cat });
-      setStep("time");
-    } else {
-      onLog(axis, cat, amount);
-    }
-  }
-
   return (
     <div style={styles.scrim} onClick={onClose}>
       <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
@@ -740,7 +394,6 @@ function Sheet({ mode, onLog, onClose, askTime }) {
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
                   key={n}
-                  className="pxbtn"
                   style={styles.quick(amount === n)}
                   onClick={() => {
                     setAmount(n);
@@ -752,15 +405,15 @@ function Sheet({ mode, onLog, onClose, askTime }) {
               ))}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <button className="pxbtn" style={styles.step} onClick={() => setAmount((a) => Math.max(1, a - 1))}>−</button>
+              <button style={styles.step} onClick={() => setAmount((a) => Math.max(1, a - 1))}>−</button>
               <span style={{ fontSize: 24, minWidth: 30, textAlign: "center" }}>{amount}</span>
-              <button className="pxbtn" style={styles.step} onClick={() => setAmount((a) => a + 1)}>+</button>
+              <button style={styles.step} onClick={() => setAmount((a) => a + 1)}>+</button>
             </div>
-            <button className="pxbtn" style={styles.next} onClick={() => setStep("category")}>
+            <button style={styles.next} onClick={() => setStep("category")}>
               next — pick a category
             </button>
           </div>
-        ) : step === "category" ? (
+        ) : (
           <div>
             <button style={styles.back} onClick={() => setStep("count")}>
               ‹ {amount} spoon{amount > 1 ? "s" : ""}
@@ -770,14 +423,7 @@ function Sheet({ mode, onLog, onClose, askTime }) {
                 <div style={styles.axisLabel}>{axis}</div>
                 <div style={styles.chips}>
                   {groups[axis].map((cat) => (
-                    <button
-                      key={cat}
-                      style={{
-                        ...styles.chip,
-                        background: axis === "physical" ? C.chipPhys : C.chipMent,
-                      }}
-                      onClick={() => choose(axis, cat)}
-                    >
+                    <button key={cat} style={styles.chip} onClick={() => onPick(axis, cat, amount)}>
                       {cat}
                     </button>
                   ))}
@@ -785,453 +431,40 @@ function Sheet({ mode, onLog, onClose, askTime }) {
               </div>
             ))}
           </div>
-        ) : (
-          <div style={styles.countStep}>
-            <button style={styles.back} onClick={() => setStep("category")}>‹ back</button>
-            <div style={styles.sheetTitle}>what time?</div>
-            <input
-              type="time"
-              value={timeStr}
-              onChange={(e) => setTimeStr(e.target.value)}
-              style={styles.timeInput}
-            />
-            <button
-              className="pxbtn"
-              style={{ ...styles.next, opacity: timeStr ? 1 : 0.4 }}
-              disabled={!timeStr}
-              onClick={() => timeStr && onLog(picked.axis, picked.cat, amount, { timeStr })}
-            >
-              log at this time
-            </button>
-            <button style={styles.linkBtn} onClick={() => onLog(picked.axis, picked.cat, amount, { timeUnknown: true })}>
-              no time (?)
-            </button>
-          </div>
         )}
       </div>
     </div>
   );
 }
 
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toLocaleDateString("en-CA");
-}
-function rangeCutoff(r) {
-  if (r === "day") return new Date().toLocaleDateString("en-CA");
-  if (r === "week") return daysAgo(6);
-  if (r === "month") return daysAgo(29);
-  if (r === "year") return daysAgo(364);
-  return null;
-}
-function summarize(d) {
-  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0;
-  const dCats = {}, bCats = {};
-  for (const e of d.events || []) {
-    if (e.type === "drain") {
-      spent += e.amount;
-      dCats[e.category] = (dCats[e.category] || 0) + e.amount;
-      if (e.axis === "mental") mDr += e.amount;
-      else if (e.axis === "physical") pDr += e.amount;
-    } else {
-      gained += e.amount;
-      bCats[e.category] = (bCats[e.category] || 0) + e.amount;
-      if (e.axis === "mental") mGn += e.amount;
-      else if (e.axis === "physical") pGn += e.amount;
-    }
-  }
-  const n = (d.events || []).length;
-  const level = (d.start || 0) - spent + gained;
-  return {
-    start: d.start,
-    startNote: d.startNote || "",
-    dayNote: d.dayNote || "",
-    untracked: !!d.untracked,
-    n,
-    spent,
-    gained,
-    mDr,
-    pDr,
-    mGn,
-    pGn,
-    dCats,
-    bCats,
-    empty: n > 0 && level <= 0,
-  };
-}
-function topN(map, n) {
-  return Object.entries(map || {})
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, n);
-}
-function aggregateSummaries(days) {
-  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0, startSum = 0;
-  const dCats = {}, bCats = {};
-  for (const d of days) {
-    spent += d.spent; gained += d.gained;
-    mDr += d.mDr; pDr += d.pDr; mGn += d.mGn; pGn += d.pGn;
-    startSum += d.start || 0;
-    if (d.empty) zero++;
-    for (const k in d.dCats || {}) dCats[k] = (dCats[k] || 0) + d.dCats[k];
-    for (const k in d.bCats || {}) bCats[k] = (bCats[k] || 0) + d.bCats[k];
-  }
-  const nDays = days.length;
-  return {
-    spent, gained, net: gained - spent, mDr, pDr, mGn, pGn, zero, nDays,
-    dCats, bCats, startSum,
-    avgSpent: nDays ? spent / nDays : 0,
-    avgGained: nDays ? gained / nDays : 0,
-  };
-}
-function observations(a) {
-  const obs = [];
-  if (a.nDays < 3) return obs;
-  const td = topN(a.dCats, 1)[0];
-  if (td && a.spent > 0 && td[1] / a.spent >= 0.3)
-    obs.push(`Most drains came from ${td[0]} (${td[1]} spoons).`);
-  const dr = a.mDr + a.pDr;
-  if (dr > 0 && Math.abs(a.mDr - a.pDr) / dr >= 0.25)
-    obs.push(`Drains leaned ${a.mDr > a.pDr ? "mental" : "physical"} (${a.mDr} mental · ${a.pDr} physical).`);
-  const tb = topN(a.bCats, 1)[0];
-  if (tb && a.gained > 0 && tb[1] / a.gained >= 0.3)
-    obs.push(`Most spoons came back from ${tb[0]} (${tb[1]}).`);
-  if (a.zero > 0)
-    obs.push(`Reached empty on ${a.zero} of ${a.nDays} days.`);
-  return obs.slice(0, 3);
-}
-function CatList({ items, color }) {
-  if (!items.length)
-    return <div style={{ fontSize: 13, color: C.inkFaint }}>nothing logged</div>;
-  const max = items[0][1] || 1;
+function Insights({ day }) {
+  const evs = (day && day.events) || [];
+  const sum = (t) => evs.filter((e) => e.type === t).reduce((n, e) => n + e.amount, 0);
+  const mental = evs.filter((e) => e.type === "drain" && e.axis === "mental").length;
+  const physical = evs.filter((e) => e.type === "drain" && e.axis === "physical").length;
   return (
-    <div>
-      {items.map(([cat, sp]) => (
-        <div key={cat} style={styles.catRow}>
-          <span style={styles.catName}>{cat}</span>
-          <div style={styles.catBarWrap}>
-            <div style={{ ...styles.catBar, width: (sp / max) * 100 + "%", background: color }} />
+    <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left" }}>
+      <p style={{ color: C.inkSoft, lineHeight: 1.6, fontSize: 14 }}>
+        Not enough here yet to say anything you couldn’t already feel. A few days of use and
+        patterns will start to show — stated plainly, only when they’re true.
+      </p>
+      {evs.length > 0 && (
+        <div style={styles.mirror}>
+          <div style={styles.mirrorRow}>
+            <span>today</span>
+            <span>
+              spent {sum("drain")} · back {sum("build")}
+            </span>
           </div>
-          <span style={styles.catVal}>{sp}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-function aggregate(days) {
-  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0;
-  days.forEach((d) => {
-    d.events.forEach((e) => {
-      if (e.type === "drain") {
-        spent += e.amount;
-        if (e.axis === "mental") mDr += e.amount;
-        else if (e.axis === "physical") pDr += e.amount;
-      } else {
-        gained += e.amount;
-        if (e.axis === "mental") mGn += e.amount;
-        else if (e.axis === "physical") pGn += e.amount;
-      }
-    });
-    if (d.events.length && levelOf(d) <= 0) zero++;
-  });
-  return { spent, gained, net: gained - spent, mDr, pDr, mGn, pGn, zero, nDays: days.length };
-}
-function AxisBar({ label, mental, physical }) {
-  const total = mental + physical;
-  if (!total) return null;
-  const mPct = Math.round((mental / total) * 100);
-  return (
-    <div>
-      <div className="seclabel" style={styles.smallLabel}>{label} — mental vs physical</div>
-      <div style={styles.bar2}>
-        <div style={{ ...styles.seg, width: mPct + "%", background: C.chipMent }} />
-        <div style={{ ...styles.seg, width: 100 - mPct + "%", background: C.physBar }} />
-      </div>
-      <div style={styles.barLabel}>
-        <span>{mental} mental</span>
-        <span>{physical} physical</span>
-      </div>
-    </div>
-  );
-}
-const RANGES = [
-  ["day", "day"],
-  ["week", "week"],
-  ["month", "month"],
-  ["year", "year"],
-  ["all", "all time"],
-];
-const fmtDay = (s) =>
-  new Date(s + "T00:00").toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-const fmtTime = (ts) =>
-  new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-function SpendGainChart({ data }) {
-  if (!data.length) return null;
-  const maxVal = Math.max(1, ...data.flatMap((x) => [x.s, x.g]));
-  const maxCells = 12;
-  const scale = Math.max(1, Math.ceil(maxVal / maxCells));
-  const cell = 8,
-    gap = 2,
-    pairGap = 2,
-    groupGap = 10;
-  const gw = cell * 2 + pairGap;
-  const stepX = gw + groupGap;
-  const rows = Math.ceil(maxVal / scale);
-  const chartH = rows * (cell + gap);
-  const labelH = 16;
-  const width = data.length * stepX;
-  const cellsFor = (v) => (v <= 0 ? 0 : Math.max(1, Math.round(v / scale)));
-  const col = (x, v, color, key) => {
-    const n = cellsFor(v);
-    const out = [];
-    for (let c = 0; c < n; c++) {
-      const y = chartH - (c + 1) * (cell + gap) + gap;
-      out.push(<rect key={key + c} x={x} y={y} width={cell} height={cell} fill={color} />);
-    }
-    return out;
-  };
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <svg
-        width={Math.max(width, 1)}
-        height={chartH + labelH}
-        shapeRendering="crispEdges"
-        style={{ display: "block" }}
-      >
-        {data.map((x, i) => {
-          const gx = i * stepX;
-          return (
-            <g key={x.d}>
-              {col(gx, x.s, C.spentBar, "s" + i)}
-              {col(gx + cell + pairGap, x.g, C.gainBar, "g" + i)}
-              <text
-                x={gx + gw / 2}
-                y={chartH + 12}
-                textAnchor="middle"
-                fontSize="9"
-                fill={C.inkFaint}
-                fontFamily={MONO}
-              >
-                {x.d.slice(8)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      {scale > 1 && (
-        <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 4 }}>
-          each block = {scale} spoons
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Insights({ active }) {
-  const [idx, setIdx] = useState(null);
-  const [range, setRange] = useState("week");
-  const [open, setOpen] = useState(null);
-  const [eventsCache, setEventsCache] = useState({});
-
-  useEffect(() => {
-    (async () => {
-      const i = (await sget("index:v2")) || { v: 1, days: {} };
-      let days = { ...i.days };
-      if (active) days = { ...days, [active.date]: summarize(active) };
-      setIdx(days);
-    })();
-  }, [active]);
-
-  async function toggleDay(date) {
-    if (open === date) {
-      setOpen(null);
-      return;
-    }
-    setOpen(date);
-    if (eventsCache[date] === undefined) {
-      try {
-        const rec = await sget("day:" + date);
-        setEventsCache((c) => ({ ...c, [date]: (rec && rec.events) || [] }));
-      } catch {
-        setEventsCache((c) => ({ ...c, [date]: [] }));
-      }
-    }
-  }
-
-  if (!idx)
-    return (
-      <main style={{ ...styles.main, alignItems: "stretch" }}>
-        <span style={{ color: C.inkSoft }}>…</span>
-      </main>
-    );
-
-  const cut = rangeCutoff(range);
-  const inRange = Object.keys(idx)
-    .filter((d) => !cut || d >= cut)
-    .sort((a, b) => (a < b ? 1 : -1))
-    .map((d) => ({ date: d, ...idx[d] }));
-  const tracked = inRange.filter((d) => !d.untracked);
-  const a = aggregateSummaries(tracked);
-  const chartData = [...tracked]
-    .reverse()
-    .slice(-14)
-    .map((d) => ({ d: d.date, s: d.spent, g: d.gained }));
-  const obs = observations(a);
-  const topDrains = topN(a.dCats, 5);
-  const topBuilders = topN(a.bCats, 5);
-
-  return (
-    <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left", gap: 18 }}>
-      <div style={styles.rangeRow}>
-        {RANGES.map(([r, label]) => (
-          <button key={r} className="pxbtn" style={styles.rangeBtn(range === r)} onClick={() => setRange(r)}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {inRange.length === 0 ? (
-        <p style={{ color: C.inkSoft, fontSize: 14, lineHeight: 1.6 }}>
-          Nothing in this window yet.
-        </p>
-      ) : (
-        <>
-          {a.nDays > 0 && (
-            <>
-              <div style={styles.mirror}>
-                <div style={styles.mirrorRow}>
-                  <span>spent</span>
-                  <span>{a.spent}</span>
-                </div>
-                <div style={styles.mirrorRow}>
-                  <span>gained</span>
-                  <span>{a.gained}</span>
-                </div>
-                <div style={styles.mirrorRow}>
-                  <span>net</span>
-                  <span>{a.net > 0 ? "+" : ""}{a.net}</span>
-                </div>
-                <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
-                  <span>per tracked day</span>
-                  <span>~{a.avgSpent.toFixed(1)} spent · ~{a.avgGained.toFixed(1)} back</span>
-                </div>
-              </div>
-
-              {obs.length > 0 && (
-                <div>
-                  <div className="seclabel" style={styles.smallLabel}>what stands out</div>
-                  {obs.map((o, i) => (
-                    <p key={i} style={styles.obs}>
-                      {o}
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              <div>
-                <div className="seclabel" style={styles.smallLabel}>where your energy goes</div>
-                <CatList items={topDrains} color={C.spentBar} />
-              </div>
-
-              <div>
-                <div className="seclabel" style={styles.smallLabel}>what gives it back</div>
-                <CatList items={topBuilders} color={C.gainBar} />
-              </div>
-
-              <AxisBar label="drains" mental={a.mDr} physical={a.pDr} />
-              <AxisBar label="gains" mental={a.mGn} physical={a.pGn} />
-
-              <div>
-                <div className="seclabel" style={styles.smallLabel}>spent vs gained · by day</div>
-                <SpendGainChart data={chartData} />
-                <div style={styles.legend}>
-                  <span>
-                    <i style={{ ...styles.swatch, background: C.spentBar }} /> spent
-                  </span>
-                  <span>
-                    <i style={{ ...styles.swatch, background: C.gainBar }} /> gained
-                  </span>
-                </div>
-              </div>
-
-              <div style={styles.mirror}>
-                <div style={styles.mirrorRow}>
-                  <span>days tracked</span>
-                  <span>{a.nDays}</span>
-                </div>
-                <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
-                  <span>reached empty</span>
-                  <span>{a.zero}</span>
-                </div>
-              </div>
-            </>
+          {(mental > 0 || physical > 0) && (
+            <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
+              <span>drains</span>
+              <span>
+                {mental} mental · {physical} physical
+              </span>
+            </div>
           )}
-
-          <div>
-            <div className="seclabel" style={styles.smallLabel}>history</div>
-            {inRange.map((d) => {
-              const isOpen = open === d.date;
-              const evs = eventsCache[d.date];
-              return (
-                <div key={d.date} style={styles.dayWrap}>
-                  <button style={styles.dayRow} onClick={() => toggleDay(d.date)}>
-                    <span>
-                      {isOpen ? "▾" : "▸"} {fmtDay(d.date)}
-                    </span>
-                    <span style={{ color: C.inkSoft }}>
-                      {d.untracked ? "untracked" : `spent ${d.spent} · back ${d.gained}`}
-                    </span>
-                  </button>
-                  {isOpen && (
-                    <div style={styles.evList}>
-                      <div style={{ ...styles.evRow, color: C.inkSoft }}>
-                        <span style={{ minWidth: 50 }}>start</span>
-                        <span style={{ minWidth: 26 }}>{d.start}</span>
-                        <span style={{ flex: 1, color: C.inkFaint }}>{d.startNote || ""}</span>
-                      </div>
-                      {d.dayNote ? (
-                        <div style={{ ...styles.evRow, color: C.inkFaint }}>
-                          <span style={{ minWidth: 50 }}>note</span>
-                          <span style={{ flex: 1 }}>{d.dayNote}</span>
-                        </div>
-                      ) : null}
-                      {evs === undefined && (
-                        <div style={{ ...styles.evRow, color: C.inkFaint }}>…</div>
-                      )}
-                      {evs && evs.length === 0 && (
-                        <div style={{ ...styles.evRow, color: C.inkFaint }}>no entries</div>
-                      )}
-                      {evs &&
-                        [...evs]
-                          .sort((x, y) => (x.ts < y.ts ? -1 : 1))
-                          .map((e) => (
-                            <div key={e.id} style={styles.evRow}>
-                              <span style={{ color: C.inkFaint, minWidth: 50 }}>
-                                {e.timeUnknown ? "?" : fmtTime(e.ts)}
-                              </span>
-                              <span style={{ minWidth: 26 }}>
-                                {e.type === "build" ? "+" : "−"}
-                                {e.amount}
-                              </span>
-                              <span style={{ flex: 1 }}>
-                                {e.category}
-                                {e.axis ? <span style={{ color: C.inkFaint }}> · {e.axis}</span> : null}
-                                {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
-                              </span>
-                            </div>
-                          ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </>
+        </div>
       )}
     </main>
   );
@@ -1244,19 +477,6 @@ function Style() {
       button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
       button:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 2px; }
       input:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 1px; }
-      .pxbtn { box-shadow: 3px 3px 0 ${C.line}; }
-      .pxbtn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 ${C.line}; }
-      .seclabel::before {
-        content: "";
-        display: inline-block;
-        width: 7px; height: 7px;
-        margin-right: 8px;
-        background: ${C.ink};
-        vertical-align: middle;
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .pxbtn:active { transform: none; }
-      }
     `}</style>
   );
 }
@@ -1278,15 +498,12 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "16px 22px",
-    borderBottom: `1px solid ${C.line}`,
+    padding: "18px 22px",
   },
-  wordmark: { fontSize: 14, letterSpacing: 2, color: C.ink, textTransform: "uppercase" },
+  wordmark: { fontSize: 14, letterSpacing: 1, color: C.inkSoft },
   ver: { fontSize: 11, color: C.inkFaint },
   navlink: (on) => ({
     fontSize: 13,
-    letterSpacing: 1,
-    textTransform: "uppercase",
     color: on ? C.ink : C.inkFaint,
     paddingBottom: 2,
     borderBottom: on ? `2px solid ${C.ink}` : "2px solid transparent",
@@ -1310,101 +527,26 @@ const styles = {
   count: { fontSize: 40, fontWeight: 500, lineHeight: 1, letterSpacing: -0.5 },
   countOf: { fontSize: 20, fontWeight: 400, color: C.inkFaint },
   ofLine: { fontSize: 13, color: C.inkSoft, marginTop: 6, textDecoration: "underline" },
-  dateNav: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 18,
-    width: "100%",
-    paddingBottom: 8,
-  },
-  navArrow: { fontSize: 22, color: C.inkSoft, minWidth: 36, minHeight: 36 },
-  dateLabel: {
-    fontSize: 13,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: C.ink,
-    minHeight: 36,
-    minWidth: 120,
-  },
-  entries: {
-    width: "100%",
-    marginTop: 16,
-    borderTop: `1px solid ${C.line}`,
-  },
-  entryRow: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-    padding: "9px 0",
-    fontSize: 13,
-    color: C.ink,
-    borderBottom: `1px solid ${C.line}`,
-  },
-  remove: { fontSize: 18, color: C.inkFaint, minWidth: 30, minHeight: 30 },
-  entryTime: {
-    color: C.inkSoft,
-    minWidth: 48,
-    textAlign: "left",
-    textDecoration: "underline",
-    minHeight: 28,
-  },
-  timeEditRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "8px 0 12px",
-  },
-  timeInput: {
-    padding: "10px 12px",
-    borderRadius: 0,
-    border: `1px solid ${C.line}`,
-    background: C.surface,
-    fontSize: 14,
-    color: C.ink,
-    fontFamily: MONO,
-  },
-  dayNoteShow: {
-    maxWidth: 320,
-    marginTop: 8,
-    fontSize: 13,
-    color: C.inkSoft,
-    fontStyle: "italic",
-    textAlign: "center",
-  },
   adjust: {
     display: "flex",
     alignItems: "center",
     gap: 16,
     background: C.surface,
     border: `1px solid ${C.line}`,
-    borderRadius: 0,
+    borderRadius: 4,
     padding: "12px 18px",
     marginTop: 6,
   },
   step: {
     width: 44,
     height: 44,
-    borderRadius: 0,
+    borderRadius: 4,
     border: `1px solid ${C.line}`,
     background: C.surfaceDim,
     fontSize: 22,
     color: C.inkSoft,
   },
   linkBtn: { fontSize: 13, color: C.inkSoft },
-  adjustCol: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 12,
-    background: C.surface,
-    border: `1px solid ${C.line}`,
-    borderRadius: 0,
-    padding: "14px 18px",
-    marginTop: 6,
-    width: "100%",
-    maxWidth: 320,
-  },
   zero: {
     maxWidth: 300,
     textAlign: "center",
@@ -1413,28 +555,13 @@ const styles = {
     color: C.ink,
     marginTop: 8,
   },
-  untrackedPanel: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 18,
-    width: "100%",
-    padding: "44px 0",
-  },
-  untrackedMsg: {
-    maxWidth: 300,
-    textAlign: "center",
-    fontSize: 15,
-    lineHeight: 1.5,
-    color: C.inkSoft,
-  },
   actions: { display: "flex", flexDirection: "column", gap: 12, width: "100%", marginTop: 18 },
   action: {
     width: "100%",
     minHeight: 58,
     background: C.surface,
     border: `1px solid ${C.ink}`,
-    borderRadius: 0,
+    borderRadius: 4,
     fontSize: 17,
     color: C.ink,
   },
@@ -1461,7 +588,7 @@ const styles = {
     flex: 1,
     minWidth: 140,
     padding: "12px 14px",
-    borderRadius: 0,
+    borderRadius: 4,
     border: `1px solid ${C.line}`,
     background: C.surface,
     fontSize: 14,
@@ -1471,7 +598,7 @@ const styles = {
   enter: {
     minHeight: 44,
     padding: "0 18px",
-    borderRadius: 0,
+    borderRadius: 4,
     border: `1px solid ${C.ink}`,
     background: C.surfaceDim,
     color: C.ink,
@@ -1480,7 +607,7 @@ const styles = {
   skipBtn: {
     minHeight: 44,
     padding: "0 18px",
-    borderRadius: 0,
+    borderRadius: 4,
     border: `1px solid ${C.line}`,
     background: C.surface,
     color: C.inkSoft,
@@ -1499,61 +626,19 @@ const styles = {
     maxWidth: 480,
     background: C.paper,
     borderTop: `2px solid ${C.ink}`,
-    borderRadius: 0,
+    borderRadius: "4px 4px 0 0",
     padding: "10px 20px 28px",
     maxHeight: "78vh",
     overflowY: "auto",
   },
   handle: { width: 40, height: 4, background: C.line, margin: "8px auto 18px" },
-  exportHint: { fontSize: 13, color: C.inkSoft, lineHeight: 1.5, margin: "6px 0 18px" },
-  exportQuick: { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 },
-  exportBtn: {
-    flex: "1 1 40%",
-    minHeight: 46,
-    padding: "0 14px",
-    background: C.surface,
-    border: `1px solid ${C.ink}`,
-    borderRadius: 0,
-    fontSize: 14,
-    color: C.ink,
-    cursor: "pointer",
-  },
-  exportCustom: { marginBottom: 22 },
-  exportDates: { display: "flex", gap: 12, margin: "10px 0 12px" },
-  exportDateLabel: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-    fontSize: 12,
-    color: C.inkSoft,
-  },
-  dateInput: {
-    fontFamily: MONO,
-    fontSize: 14,
-    padding: "8px 6px",
-    background: C.surface,
-    border: `1px solid ${C.line}`,
-    borderRadius: 0,
-    color: C.ink,
-  },
-  exportFull: {
-    width: "100%",
-    minHeight: 46,
-    background: C.surfaceDim,
-    border: `1px solid ${C.ink}`,
-    borderRadius: 0,
-    fontSize: 14,
-    color: C.ink,
-    cursor: "pointer",
-  },
   countStep: { display: "flex", flexDirection: "column", alignItems: "center", gap: 22, paddingBottom: 10 },
   sheetTitle: { fontSize: 16, color: C.ink, marginTop: 4 },
   quickRow: { display: "flex", gap: 10 },
   quick: (on) => ({
     width: 50,
     height: 50,
-    borderRadius: 0,
+    borderRadius: 4,
     border: `1px solid ${on ? C.ink : C.line}`,
     background: on ? C.surfaceDim : C.surface,
     fontSize: 18,
@@ -1564,30 +649,23 @@ const styles = {
     padding: "0 24px",
     background: C.surface,
     border: `1px solid ${C.ink}`,
-    borderRadius: 0,
+    borderRadius: 4,
     fontSize: 15,
     color: C.ink,
   },
   back: { fontSize: 13, color: C.inkSoft, marginBottom: 16, minHeight: 36 },
-  axisLabel: {
-    fontSize: 14,
-    letterSpacing: 1,
-    color: C.ink,
-    fontWeight: 600,
-    marginBottom: 10,
-    textTransform: "uppercase",
-  },
+  axisLabel: { fontSize: 12, letterSpacing: 1, color: C.inkFaint, marginBottom: 10, textTransform: "uppercase" },
   chips: { display: "flex", flexWrap: "wrap", gap: 10 },
   chip: {
     minHeight: 48,
     padding: "0 16px",
     background: C.surface,
     border: `1px solid ${C.line}`,
-    borderRadius: 0,
+    borderRadius: 4,
     fontSize: 14,
     color: C.ink,
   },
-  mirror: { width: "100%", border: `1px solid ${C.line}`, borderRadius: 0, background: C.surface },
+  mirror: { width: "100%", marginTop: 22, border: `1px solid ${C.line}`, borderRadius: 4, background: C.surface },
   mirrorRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -1596,95 +674,4 @@ const styles = {
     color: C.ink,
     borderBottom: `1px solid ${C.line}`,
   },
-  rangeRow: { display: "flex", flexWrap: "wrap", gap: 6 },
-  rangeBtn: (on) => ({
-    flex: 1,
-    minWidth: 56,
-    minHeight: 38,
-    padding: "0 6px",
-    border: `1px solid ${on ? C.ink : C.line}`,
-    background: on ? C.surfaceDim : C.surface,
-    color: on ? C.ink : C.inkSoft,
-    fontSize: 12,
-    borderRadius: 0,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  }),
-  smallLabel: {
-    fontSize: 12,
-    color: C.ink,
-    fontWeight: 600,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  bar2: {
-    display: "flex",
-    width: "100%",
-    height: 14,
-    border: `1px solid ${C.line}`,
-    overflow: "hidden",
-  },
-  seg: { height: "100%" },
-  barLabel: {
-    display: "flex",
-    justifyContent: "space-between",
-    marginTop: 6,
-    fontSize: 12,
-    color: C.inkSoft,
-  },
-  dayWrap: { borderTop: `1px solid ${C.line}` },
-  dayRow: {
-    width: "100%",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 10,
-    padding: "12px 2px",
-    fontSize: 13,
-    color: C.ink,
-    textAlign: "left",
-  },
-  evList: { padding: "0 2px 12px" },
-  evRow: {
-    display: "flex",
-    gap: 10,
-    alignItems: "baseline",
-    padding: "5px 0",
-    fontSize: 13,
-    color: C.ink,
-  },
-  legend: {
-    display: "flex",
-    gap: 18,
-    marginTop: 10,
-    fontSize: 12,
-    color: C.inkSoft,
-    alignItems: "center",
-  },
-  swatch: {
-    display: "inline-block",
-    width: 10,
-    height: 10,
-    marginRight: 6,
-    border: `1px solid ${C.line}`,
-    verticalAlign: "middle",
-  },
-  obs: { fontSize: 14, color: C.ink, lineHeight: 1.5, margin: "0 0 8px" },
-  catRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "6px 0",
-    fontSize: 13,
-  },
-  catName: { width: 120, flexShrink: 0, color: C.ink },
-  catBarWrap: {
-    flex: 1,
-    height: 12,
-    border: `1px solid ${C.line}`,
-    background: C.surface,
-  },
-  catBar: { height: "100%" },
-  catVal: { width: 28, textAlign: "right", color: C.inkSoft },
 };
