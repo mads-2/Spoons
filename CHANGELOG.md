@@ -3,6 +3,9 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.12.1
+- Spent button light red, Gained button light green (matches the chart).
+
 ## 0.12.0
 - Spoon redrawn at 20px, derived directly from the reference image (faithful bowl + thin curved-shadow handle).
 - Fixed insights showing only today: recent days are now fetched directly by date key (plus the open day), not only via key listing.

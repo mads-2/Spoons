@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.12.0";
+export const APP_VERSION = "0.12.1";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -406,8 +406,18 @@ export default function App() {
             )}
 
             <div style={S.actions}>
-              <button style={S.action} onClick={() => setSheet("drain")}>Spent (−)</button>
-              <button style={S.action} onClick={() => setSheet("build")}>Gained (+)</button>
+              <button
+                style={{ ...S.action, background: C.spentBar }}
+                onClick={() => setSheet("drain")}
+              >
+                Spent (−)
+              </button>
+              <button
+                style={{ ...S.action, background: C.gainBar }}
+                onClick={() => setSheet("build")}
+              >
+                Gained (+)
+              </button>
             </div>
 
             {day && day.events.length > 0 && (
