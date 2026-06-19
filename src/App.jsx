@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.11.0";
+export const APP_VERSION = "0.11.1";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -112,19 +112,19 @@ const SPRITE = [
   "                ",
   "          LHHL  ",
   "         LMDDML ",
-  "        LMMDDMH ",
-  "        MLMMDML ",
-  "       LLLMMMM  ",
-  "      LLLLMMD   ",
-  "      HLLLMD    ",
-  "     HLLLM      ",
-  "    HLLMD       ",
-  "   HLLM         ",
-  "   HLMD         ",
-  "  HLM           ",
-  " HLMD           ",
-  " HLD            ",
-  "  D             ",
+  "        LMMDMMH ",
+  "        LMMDMML ",
+  "       LLMDMMM  ",
+  "       LLLMMM   ",
+  "      LLLMM     ",
+  "      LD        ",
+  "     LD         ",
+  "    LD          ",
+  "   LD           ",
+  "  LD            ",
+  " LD             ",
+  " D              ",
+  "                ",
 ];
 const TONE = { H: "hi", L: "li", M: "mid", D: "dk" };
 const SPOON_CELLS = [];

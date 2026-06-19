@@ -3,6 +3,9 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.11.1
+- Spoon: narrower handle; bowl shadow given a slight curve.
+
 ## 0.11.0
 - Spoon redrawn paler to match the reference; center is a light medium-slate, not a dark core.
 - Day navigation: step to previous days (‹ / ›, tap the date to jump back to today) and edit any day.
