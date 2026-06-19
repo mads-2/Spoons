@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
-export const APP_VERSION = "0.15.0";
+export const APP_VERSION = "0.16.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -189,6 +189,9 @@ export default function App() {
   const [dayNoteOpen, setDayNoteOpen] = useState(false);
   const [dayNoteDraft, setDayNoteDraft] = useState("");
   const [editTimeId, setEditTimeId] = useState(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [expFrom, setExpFrom] = useState("");
+  const [expTo, setExpTo] = useState("");
 
   const isToday = activeDate === todayStr;
 
@@ -351,16 +354,43 @@ export default function App() {
   async function setUntracked(val) {
     await persist({ ...day, untracked: val });
   }
-  async function exportData() {
-    const keys = await slist("day:");
-    const out = { exportedAt: new Date().toISOString(), version: 1, days: {} };
-    for (const k of keys) out.days[k] = await sget(k);
+  async function runExport(from, to) {
+    const out = {
+      exportedAt: new Date().toISOString(),
+      version: 1,
+      from: from || null,
+      to: to || null,
+      days: {},
+    };
+    if (from && to) {
+      const cur = new Date(from + "T00:00:00");
+      const end = new Date(to + "T00:00:00");
+      while (cur <= end) {
+        const ds = cur.toLocaleDateString("en-CA");
+        try {
+          const rec = await sget("day:" + ds);
+          if (rec) out.days["day:" + ds] = rec;
+        } catch {}
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else {
+      try {
+        const keys = await slist("day:");
+        for (const k of keys) {
+          const d = await sget(k);
+          if (d) out.days[k] = d;
+        }
+      } catch {}
+    }
+    const name =
+      from && to ? `spoons-${from}_to_${to}.json` : "spoons-export-full.json";
     const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "spoons-export.json";
+    a.download = name;
     a.click();
     URL.revokeObjectURL(a.href);
+    setExportOpen(false);
   }
 
   const S = styles;
@@ -387,7 +417,7 @@ export default function App() {
             <button style={S.navlink(view === "insights")} onClick={() => setView("insights")}>
               insights
             </button>
-            <button style={S.navlink(false)} onClick={exportData}>
+            <button style={S.navlink(false)} onClick={() => setExportOpen(true)}>
               export
             </button>
           </nav>
@@ -610,6 +640,72 @@ export default function App() {
             log(sheet === "build" ? "build" : "drain", axis, cat, amount, opts)
           }
         />
+      )}
+
+      {exportOpen && (
+        <div style={styles.scrim} onClick={() => setExportOpen(false)}>
+          <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.handle} />
+            <div style={styles.sheetTitle}>export data</div>
+            <p style={styles.exportHint}>
+              A JSON file of your days. Pick a range, or take everything.
+            </p>
+
+            <div style={styles.exportQuick}>
+              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(6), todayStr)}>
+                last 7 days
+              </button>
+              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(29), todayStr)}>
+                last 30 days
+              </button>
+              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(89), todayStr)}>
+                last 90 days
+              </button>
+              <button className="pxbtn" style={styles.exportBtn} onClick={() => runExport(daysAgo(364), todayStr)}>
+                last year
+              </button>
+            </div>
+
+            <div style={styles.exportCustom}>
+              <div className="seclabel" style={styles.smallLabel}>custom range</div>
+              <div style={styles.exportDates}>
+                <label style={styles.exportDateLabel}>
+                  from
+                  <input
+                    type="date"
+                    value={expFrom}
+                    max={expTo || todayStr}
+                    onChange={(e) => setExpFrom(e.target.value)}
+                    style={styles.dateInput}
+                  />
+                </label>
+                <label style={styles.exportDateLabel}>
+                  to
+                  <input
+                    type="date"
+                    value={expTo}
+                    min={expFrom || undefined}
+                    max={todayStr}
+                    onChange={(e) => setExpTo(e.target.value)}
+                    style={styles.dateInput}
+                  />
+                </label>
+              </div>
+              <button
+                className="pxbtn"
+                style={{ ...styles.exportBtn, opacity: expFrom && expTo ? 1 : 0.4 }}
+                disabled={!expFrom || !expTo}
+                onClick={() => runExport(expFrom, expTo)}
+              >
+                export range
+              </button>
+            </div>
+
+            <button className="pxbtn" style={styles.exportFull} onClick={() => runExport()}>
+              export everything
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1409,6 +1505,48 @@ const styles = {
     overflowY: "auto",
   },
   handle: { width: 40, height: 4, background: C.line, margin: "8px auto 18px" },
+  exportHint: { fontSize: 13, color: C.inkSoft, lineHeight: 1.5, margin: "6px 0 18px" },
+  exportQuick: { display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 22 },
+  exportBtn: {
+    flex: "1 1 40%",
+    minHeight: 46,
+    padding: "0 14px",
+    background: C.surface,
+    border: `1px solid ${C.ink}`,
+    borderRadius: 0,
+    fontSize: 14,
+    color: C.ink,
+    cursor: "pointer",
+  },
+  exportCustom: { marginBottom: 22 },
+  exportDates: { display: "flex", gap: 12, margin: "10px 0 12px" },
+  exportDateLabel: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    fontSize: 12,
+    color: C.inkSoft,
+  },
+  dateInput: {
+    fontFamily: MONO,
+    fontSize: 14,
+    padding: "8px 6px",
+    background: C.surface,
+    border: `1px solid ${C.line}`,
+    borderRadius: 0,
+    color: C.ink,
+  },
+  exportFull: {
+    width: "100%",
+    minHeight: 46,
+    background: C.surfaceDim,
+    border: `1px solid ${C.ink}`,
+    borderRadius: 0,
+    fontSize: 14,
+    color: C.ink,
+    cursor: "pointer",
+  },
   countStep: { display: "flex", flexDirection: "column", alignItems: "center", gap: 22, paddingBottom: 10 },
   sheetTitle: { fontSize: 16, color: C.ink, marginTop: 4 },
   quickRow: { display: "flex", gap: 10 },

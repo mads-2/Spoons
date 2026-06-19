@@ -3,6 +3,10 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.16.0
+- Export now offers a choice: quick ranges (last 7 / 30 / 90 days, last year), a custom from/to range, or everything.
+- Range exports are named by their dates (e.g. spoons-2026-05-01_to_2026-05-31.json); full export is spoons-export-full.json.
+
 ## 0.15.0
 - Insights made more useful for quick self-knowledge: top drains ("where your energy goes") and top builders ("what gives it back") by spoons, with bars.
 - Per-tracked-day averages added to the at-a-glance summary.
