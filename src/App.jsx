@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.12.1";
+export const APP_VERSION = "0.12.2";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -16,6 +16,8 @@ const C = {
   chipMent: "#C9CDD2",
   spentBar: "#D9ABAB",
   gainBar: "#A9C7A5",
+  spentBtn: "#EFDFDF",
+  gainBtn: "#E1ECDD",
   physBar: "#5E8CB5",
 };
 
@@ -407,13 +409,13 @@ export default function App() {
 
             <div style={S.actions}>
               <button
-                style={{ ...S.action, background: C.spentBar }}
+                style={{ ...S.action, background: C.spentBtn }}
                 onClick={() => setSheet("drain")}
               >
                 Spent (−)
               </button>
               <button
-                style={{ ...S.action, background: C.gainBar }}
+                style={{ ...S.action, background: C.gainBtn }}
                 onClick={() => setSheet("build")}
               >
                 Gained (+)
@@ -689,9 +691,8 @@ function Insights({ active }) {
 
   useEffect(() => {
     (async () => {
-      const map = new Map();
-      const add = (k, d) =>
-        map.set(k, {
+      const add = (m, k, d) =>
+        m.set(k, {
           key: k,
           date: k.slice(4),
           start: d.start,
@@ -699,32 +700,30 @@ function Insights({ active }) {
           untracked: d.untracked || false,
           events: d.events || [],
         });
-      // breadth: everything the key listing returns
+      // gather all candidate keys first, then fetch them in ONE parallel batch
+      const keys = new Set();
       try {
-        const keys = await slist("day:");
-        for (const k of keys) {
-          const d = await sget(k);
-          if (d) add(k, d);
-        }
+        (await slist("day:")).forEach((k) => keys.add(k));
       } catch {}
-      // robustness: fetch the last 45 days directly by key, in case listing lags
-      for (let i = 0; i < 45; i++) {
-        const k = "day:" + daysAgo(i);
-        if (map.has(k)) continue;
-        const d = await sget(k);
-        if (d) add(k, d);
-      }
-      // always include the day currently open in the tracker (freshest edits)
-      if (active) {
-        map.set("day:" + active.date, {
-          key: "day:" + active.date,
-          date: active.date,
-          start: active.start,
-          startNote: active.startNote || "",
-          untracked: active.untracked || false,
-          events: active.events || [],
-        });
-      }
+      for (let i = 0; i < 31; i++) keys.add("day:" + daysAgo(i));
+      if (active) keys.add("day:" + active.date);
+
+      const arr = [...keys];
+      const results = await Promise.all(
+        arr.map(async (k) => {
+          try {
+            const d = await sget(k);
+            return d ? [k, d] : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      const map = new Map();
+      for (const r of results) if (r) add(map, r[0], r[1]);
+      // freshest copy of the day open in the tracker
+      if (active) add(map, "day:" + active.date, active);
+
       const recs = [...map.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
       setDays(recs);
     })();

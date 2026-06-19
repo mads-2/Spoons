@@ -3,6 +3,10 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.12.2
+- Insights loads fast now (storage reads batched in parallel instead of sequential).
+- Track-tab Spent/Gained buttons made much paler (chart colors unchanged).
+
 ## 0.12.1
 - Spent button light red, Gained button light green (matches the chart).
 
