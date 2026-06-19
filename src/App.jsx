@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.4.0";
+export const APP_VERSION = "0.5.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -14,9 +14,9 @@ const C = {
   accent: "#7C93A6",
 };
 
-/* pixel spoon tones */
-const SPOON_FILL = { out: "#3F4C57", hi: "#E3E9EF", mid: "#A9B7C4", sh: "#71828F" };
-const SPOON_SPENT = { out: "#8B97A2", hi: "#C9D1D9", mid: "#C2CBD3", sh: "#B6C0C9" };
+/* pixel spoon tones — matched to the user's hand-drawn sprite */
+const SPOON_FILL = { hi: "#EAEEF3", li: "#CAD3DF", mid: "#9FAEC0", dk: "#7C8CA4" };
+const SPOON_SPENT = { hi: "#D7DCE2", li: "#C7CED6", mid: "#B6BFC9", dk: "#A4AEBA" };
 
 /* ── categories (states, broad — specifics live in the note) ── */
 const DRAINS = {
@@ -104,45 +104,32 @@ function levelOf(day) {
 
 /* ── pixel spoon (the signature element) ─────────────────────── */
 const SP = 16;
-const SPOON_CELLS = (() => {
-  const cx = 10.3,
-    cy = 4.6,
-    rx = 4.2,
-    ry = 3.9;
-  const hx1 = 8.3,
-    hy1 = 6.2,
-    hx2 = 2.3,
-    hy2 = 13.2,
-    hw = 1.3;
-  const inBowl = (x, y) =>
-    (x - cx) ** 2 / (rx * rx) + (y - cy) ** 2 / (ry * ry) <= 1;
-  const nearHandle = (x, y) => {
-    const dx = hx2 - hx1,
-      dy = hy2 - hy1;
-    const t = Math.max(
-      0,
-      Math.min(1, ((x - hx1) * dx + (y - hy1) * dy) / (dx * dx + dy * dy))
-    );
-    return Math.hypot(x - (hx1 + t * dx), y - (hy1 + t * dy)) <= hw;
-  };
-  const on = (x, y) => inBowl(x + 0.5, y + 0.5) || nearHandle(x + 0.5, y + 0.5);
-  const cells = [];
-  for (let y = 0; y < SP; y++) {
-    for (let x = 0; x < SP; x++) {
-      if (!on(x, y)) continue;
-      const edge =
-        !on(x - 1, y) || !on(x + 1, y) || !on(x, y - 1) || !on(x, y + 1);
-      let tone;
-      if (edge) tone = "out";
-      else {
-        const light = cx - (x + 0.5) + (cy - (y + 0.5));
-        tone = light > 1.2 ? "hi" : light > -1.4 ? "mid" : "sh";
-      }
-      cells.push({ x, y, tone });
-    }
+const SPRITE = [
+  "                ",
+  "          HMMH  ",
+  "         HMDDMH ",
+  "        HMDDDMM ",
+  "        MDDDMLL ",
+  "       HMDDMLLM ",
+  "       HMMMLLM  ",
+  "      HHMLLLM   ",
+  "     DHMLLMM    ",
+  "    DLHMLM      ",
+  "   DLHMM        ",
+  "  DLHM          ",
+  "  DLM           ",
+  " DLM            ",
+  " DM             ",
+  "                ",
+];
+const TONE = { H: "hi", L: "li", M: "mid", D: "dk" };
+const SPOON_CELLS = [];
+SPRITE.forEach((row, y) => {
+  for (let x = 0; x < row.length; x++) {
+    const t = TONE[row[x]];
+    if (t) SPOON_CELLS.push({ x, y, tone: t });
   }
-  return cells;
-})();
+});
 
 function SpoonIcon({ filled, px = 3 }) {
   const map = filled ? SPOON_FILL : SPOON_SPENT;

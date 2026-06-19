@@ -3,6 +3,9 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.5.0
+- Replaced the spoon with your hand-drawn pixel sprite (pale blue-gray, diagonal bowl).
+
 ## 0.4.0
 - Liminal blue-gray palette; blocky/monospace pixel theme.
 - Original pixel-art spoon (drawn from a grid, recolors with theme).
