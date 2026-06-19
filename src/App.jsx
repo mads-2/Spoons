@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.7.0";
+export const APP_VERSION = "0.8.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -14,8 +14,8 @@ const C = {
   accent: "#7C93A6",
   chipPhys: "#BFD0E0",
   chipMent: "#C9CDD2",
-  spentBar: "#73828F",
-  gainBar: "#AFC0D2",
+  spentBar: "#D9ABAB",
+  gainBar: "#A9C7A5",
 };
 
 /* pixel spoon tones — original sprite colors; bowl center (dk) nudged slightly lighter */
@@ -43,10 +43,9 @@ const DRAINS = {
   ],
 };
 const BUILDS = {
-  physical: ["movement", "eating / drinking", "fun activities", "other"],
+  physical: ["movement", "fun activities", "resting", "other"],
   mental: [
     "personal relationships",
-    "resting",
     "play",
     "having a win",
     "being inspired",
@@ -630,14 +629,14 @@ function Insights({ today }) {
 
           {drTotal > 0 && (
             <div>
-              <div style={styles.smallLabel}>drains — physical vs mental</div>
+              <div style={styles.smallLabel}>drains — mental vs physical</div>
               <div style={styles.bar2}>
-                <div style={{ ...styles.seg, width: pPct + "%", background: C.chipPhys }} />
                 <div style={{ ...styles.seg, width: 100 - pPct + "%", background: C.chipMent }} />
+                <div style={{ ...styles.seg, width: pPct + "%", background: C.chipPhys }} />
               </div>
               <div style={styles.barLabel}>
-                <span>{a.pDr} physical</span>
                 <span>{a.mDr} mental</span>
+                <span>{a.pDr} physical</span>
               </div>
             </div>
           )}

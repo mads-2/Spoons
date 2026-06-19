@@ -1,4 +1,12 @@
+# deps & build
 node_modules
 dist
 .DS_Store
 *.log
+
+# YOUR SPOON DATA — never commit personal exports/backups
+spoons-export.json
+*.spoons.json
+/data/
+*.local.json
+backups/

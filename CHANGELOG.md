@@ -3,6 +3,12 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.8.0
+- Insights chart: spent = light red, gained = light green; legend matched.
+- Builders: removed 'eating / drinking' from physical; moved 'resting' from mental to physical.
+- Mental-first ordering carried into the insights drains bar.
+- .gitignore now excludes spoon data exports so personal data can't be committed.
+
 ## 0.7.0
 - Insights: pixelated spends & gains bar chart (one block per spoon, recent 14 days).
 - Spoon reverted to original blue-gray sprite; bowl center only slightly lightened.

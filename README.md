@@ -24,6 +24,20 @@ doesn't exist, so it falls back to in-memory state that resets on reload — fin
 for UI work. Wiring local persistence (localStorage or a small DB) is a future
 step if you want the dev build to remember data.
 
+
+## Keeping your spoon data private
+
+Your logged spoons are **not** part of this repo and never get pushed to GitHub.
+Git only versions the code in `src/`. Your data lives in the app's runtime
+storage (Claude's `window.storage`, or in-memory when run locally) — a separate
+place the source code doesn't read from disk or write into the project folder.
+
+The one way data could leak is if you save an **export** (`spoons-export.json`)
+into this folder and commit it. To prevent that, `.gitignore` already excludes
+`spoons-export.json`, `*.spoons.json`, and a `/data/` and `backups/` folder — so
+keep any exports under one of those names/locations and git will skip them.
+Quick check before pushing: `git status` should never list a spoons file.
+
 ## Data model
 
 - One record per day under key `day:YYYY-MM-DD` (local date):
