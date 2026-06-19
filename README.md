@@ -4,6 +4,29 @@ A personal energy tracker built on spoon theory. Single-user, phone + desktop.
 This repo is the source of truth — version it with git so every UI change is a
 commit you can compare or roll back.
 
+
+## Seamless iterate -> local -> git loop
+
+Set it up once so the round trip is one command.
+
+**One time only**
+- Unzip into your project folder (e.g. `/Users/madelinesmac/Spoons`). Do this
+  ONCE — re-unzipping later would clobber your git history.
+- Connect to GitHub and push (see "Version control workflow" below).
+
+**Every iteration**
+1. Iterate in your Claude conversation. If that same conversation's artifact is
+   the one you actually use day to day, your changes go live immediately and your
+   data stays put.
+2. Download the updated file Claude hands back (lands in `~/Downloads`).
+3. In the repo, run:  `./sync.sh "what changed"`
+   That copies the file into `src/App.jsx`, commits with your message, and pushes.
+
+`APP_VERSION` rides inside `App.jsx`, so it stays in sync automatically. Treat
+your commit messages as the running changelog; update `CHANGELOG.md` only at
+milestones. Prefer clicks? GitHub Desktop does the same: drop the file in, review
+the diff, type a message, commit + push.
+
 ## Run it locally
 
 Requires Node 18+.
