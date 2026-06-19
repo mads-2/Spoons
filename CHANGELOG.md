@@ -3,6 +3,9 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.14.1
+- Button pixel-shadows lightened to grey.
+
 ## 0.14.0
 - Overall day note (separate from the start note), shown in history.
 - Pixel styling: hard offset shadows on buttons, square-pixel accents on section labels.

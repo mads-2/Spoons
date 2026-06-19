@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
-export const APP_VERSION = "0.14.0";
+export const APP_VERSION = "0.14.1";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -1066,8 +1066,8 @@ function Style() {
       button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
       button:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 2px; }
       input:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 1px; }
-      .pxbtn { box-shadow: 3px 3px 0 ${C.ink}; }
-      .pxbtn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 ${C.ink}; }
+      .pxbtn { box-shadow: 3px 3px 0 ${C.line}; }
+      .pxbtn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 ${C.line}; }
       .seclabel::before {
         content: "";
         display: inline-block;
