@@ -3,6 +3,12 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.15.0
+- Insights made more useful for quick self-knowledge: top drains ("where your energy goes") and top builders ("what gives it back") by spoons, with bars.
+- Per-tracked-day averages added to the at-a-glance summary.
+- "What stands out" — a few neutral observations, shown only once there are 3+ tracked days and a pattern is actually present.
+- Summary index now stores per-category totals (index bumped to v2; rebuilds once).
+
 ## 0.14.1
 - Button pixel-shadows lightened to grey.
 

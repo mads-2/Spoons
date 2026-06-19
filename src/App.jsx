@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
-export const APP_VERSION = "0.14.1";
+export const APP_VERSION = "0.15.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -205,7 +205,7 @@ export default function App() {
   // load (or one-time build) the per-day summary index that powers insights fast
   useEffect(() => {
     (async () => {
-      let idx = await sget("index:v1");
+      let idx = await sget("index:v2");
       if (!idx) {
         idx = { v: 1, days: {} };
         const keys = new Set();
@@ -224,7 +224,7 @@ export default function App() {
           })
         );
         for (const r of res) if (r) idx.days[r[0]] = summarize(r[1]);
-        await sset("index:v1", idx);
+        await sset("index:v2", idx);
       }
       indexRef.current = idx;
     })();
@@ -250,10 +250,10 @@ export default function App() {
     setDay(next);
     await sset("day:" + next.date, next);
     let idx = indexRef.current;
-    if (!idx) idx = (await sget("index:v1")) || { v: 1, days: {} };
+    if (!idx) idx = (await sget("index:v2")) || { v: 1, days: {} };
     idx.days[next.date] = summarize(next);
     indexRef.current = idx;
-    await sset("index:v1", idx);
+    await sset("index:v2", idx);
   }, []);
 
   const level = levelOf(day);
@@ -731,13 +731,16 @@ function rangeCutoff(r) {
 }
 function summarize(d) {
   let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0;
+  const dCats = {}, bCats = {};
   for (const e of d.events || []) {
     if (e.type === "drain") {
       spent += e.amount;
+      dCats[e.category] = (dCats[e.category] || 0) + e.amount;
       if (e.axis === "mental") mDr += e.amount;
       else if (e.axis === "physical") pDr += e.amount;
     } else {
       gained += e.amount;
+      bCats[e.category] = (bCats[e.category] || 0) + e.amount;
       if (e.axis === "mental") mGn += e.amount;
       else if (e.axis === "physical") pGn += e.amount;
     }
@@ -756,17 +759,68 @@ function summarize(d) {
     pDr,
     mGn,
     pGn,
+    dCats,
+    bCats,
     empty: n > 0 && level <= 0,
   };
 }
+function topN(map, n) {
+  return Object.entries(map || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n);
+}
 function aggregateSummaries(days) {
-  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0;
+  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0, startSum = 0;
+  const dCats = {}, bCats = {};
   for (const d of days) {
     spent += d.spent; gained += d.gained;
     mDr += d.mDr; pDr += d.pDr; mGn += d.mGn; pGn += d.pGn;
+    startSum += d.start || 0;
     if (d.empty) zero++;
+    for (const k in d.dCats || {}) dCats[k] = (dCats[k] || 0) + d.dCats[k];
+    for (const k in d.bCats || {}) bCats[k] = (bCats[k] || 0) + d.bCats[k];
   }
-  return { spent, gained, net: gained - spent, mDr, pDr, mGn, pGn, zero, nDays: days.length };
+  const nDays = days.length;
+  return {
+    spent, gained, net: gained - spent, mDr, pDr, mGn, pGn, zero, nDays,
+    dCats, bCats, startSum,
+    avgSpent: nDays ? spent / nDays : 0,
+    avgGained: nDays ? gained / nDays : 0,
+  };
+}
+function observations(a) {
+  const obs = [];
+  if (a.nDays < 3) return obs;
+  const td = topN(a.dCats, 1)[0];
+  if (td && a.spent > 0 && td[1] / a.spent >= 0.3)
+    obs.push(`Most drains came from ${td[0]} (${td[1]} spoons).`);
+  const dr = a.mDr + a.pDr;
+  if (dr > 0 && Math.abs(a.mDr - a.pDr) / dr >= 0.25)
+    obs.push(`Drains leaned ${a.mDr > a.pDr ? "mental" : "physical"} (${a.mDr} mental · ${a.pDr} physical).`);
+  const tb = topN(a.bCats, 1)[0];
+  if (tb && a.gained > 0 && tb[1] / a.gained >= 0.3)
+    obs.push(`Most spoons came back from ${tb[0]} (${tb[1]}).`);
+  if (a.zero > 0)
+    obs.push(`Reached empty on ${a.zero} of ${a.nDays} days.`);
+  return obs.slice(0, 3);
+}
+function CatList({ items, color }) {
+  if (!items.length)
+    return <div style={{ fontSize: 13, color: C.inkFaint }}>nothing logged</div>;
+  const max = items[0][1] || 1;
+  return (
+    <div>
+      {items.map(([cat, sp]) => (
+        <div key={cat} style={styles.catRow}>
+          <span style={styles.catName}>{cat}</span>
+          <div style={styles.catBarWrap}>
+            <div style={{ ...styles.catBar, width: (sp / max) * 100 + "%", background: color }} />
+          </div>
+          <span style={styles.catVal}>{sp}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 function aggregate(days) {
   let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0;
@@ -890,7 +944,7 @@ function Insights({ active }) {
 
   useEffect(() => {
     (async () => {
-      const i = (await sget("index:v1")) || { v: 1, days: {} };
+      const i = (await sget("index:v2")) || { v: 1, days: {} };
       let days = { ...i.days };
       if (active) days = { ...days, [active.date]: summarize(active) };
       setIdx(days);
@@ -931,6 +985,9 @@ function Insights({ active }) {
     .reverse()
     .slice(-14)
     .map((d) => ({ d: d.date, s: d.spent, g: d.gained }));
+  const obs = observations(a);
+  const topDrains = topN(a.dCats, 5);
+  const topBuilders = topN(a.bCats, 5);
 
   return (
     <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left", gap: 18 }}>
@@ -959,11 +1016,39 @@ function Insights({ active }) {
                   <span>gained</span>
                   <span>{a.gained}</span>
                 </div>
-                <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
+                <div style={styles.mirrorRow}>
                   <span>net</span>
                   <span>{a.net > 0 ? "+" : ""}{a.net}</span>
                 </div>
+                <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
+                  <span>per tracked day</span>
+                  <span>~{a.avgSpent.toFixed(1)} spent · ~{a.avgGained.toFixed(1)} back</span>
+                </div>
               </div>
+
+              {obs.length > 0 && (
+                <div>
+                  <div className="seclabel" style={styles.smallLabel}>what stands out</div>
+                  {obs.map((o, i) => (
+                    <p key={i} style={styles.obs}>
+                      {o}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <div className="seclabel" style={styles.smallLabel}>where your energy goes</div>
+                <CatList items={topDrains} color={C.spentBar} />
+              </div>
+
+              <div>
+                <div className="seclabel" style={styles.smallLabel}>what gives it back</div>
+                <CatList items={topBuilders} color={C.gainBar} />
+              </div>
+
+              <AxisBar label="drains" mental={a.mDr} physical={a.pDr} />
+              <AxisBar label="gains" mental={a.mGn} physical={a.pGn} />
 
               <div>
                 <div className="seclabel" style={styles.smallLabel}>spent vs gained · by day</div>
@@ -977,9 +1062,6 @@ function Insights({ active }) {
                   </span>
                 </div>
               </div>
-
-              <AxisBar label="drains" mental={a.mDr} physical={a.pDr} />
-              <AxisBar label="gains" mental={a.mGn} physical={a.pGn} />
 
               <div style={styles.mirror}>
                 <div style={styles.mirrorRow}>
@@ -1450,4 +1532,21 @@ const styles = {
     border: `1px solid ${C.line}`,
     verticalAlign: "middle",
   },
+  obs: { fontSize: 14, color: C.ink, lineHeight: 1.5, margin: "0 0 8px" },
+  catRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "6px 0",
+    fontSize: 13,
+  },
+  catName: { width: 120, flexShrink: 0, color: C.ink },
+  catBarWrap: {
+    flex: 1,
+    height: 12,
+    border: `1px solid ${C.line}`,
+    background: C.surface,
+  },
+  catBar: { height: "100%" },
+  catVal: { width: 28, textAlign: "right", color: C.inkSoft },
 };
