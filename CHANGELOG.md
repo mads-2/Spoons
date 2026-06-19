@@ -3,6 +3,12 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.7.0
+- Insights: pixelated spends & gains bar chart (one block per spoon, recent 14 days).
+- Spoon reverted to original blue-gray sprite; bowl center only slightly lightened.
+- Mental listed above physical in both spend and gain sheets.
+- Consistency pass: single monospace font, zero rounded corners throughout.
+
 ## 0.6.0
 - Insights: day/week/month/year/all-time ranges, spent/gained/net + physical-vs-mental bar, expandable per-day full history.
 - Category chips colored by axis (physical light blue, mental light grey); bigger/darker MENTAL/PHYSICAL headers.

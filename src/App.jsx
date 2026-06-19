@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.6.0";
+export const APP_VERSION = "0.7.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -14,11 +14,13 @@ const C = {
   accent: "#7C93A6",
   chipPhys: "#BFD0E0",
   chipMent: "#C9CDD2",
+  spentBar: "#73828F",
+  gainBar: "#AFC0D2",
 };
 
-/* pixel spoon tones — matched to the user's sprite, centers lightened to grey */
-const SPOON_FILL = { hi: "#EDF0F3", li: "#D7DCE1", mid: "#BFC4CA", dk: "#A9AEB4" };
-const SPOON_SPENT = { hi: "#DADDE1", li: "#CFD2D6", mid: "#C3C7CB", dk: "#B6BABF" };
+/* pixel spoon tones — original sprite colors; bowl center (dk) nudged slightly lighter */
+const SPOON_FILL = { hi: "#EAEEF3", li: "#CAD3DF", mid: "#9FAEC0", dk: "#909DAD" };
+const SPOON_SPENT = { hi: "#D7DCE2", li: "#C7CED6", mid: "#B6BFC9", dk: "#A4AEBA" };
 
 /* ── categories (states, broad — specifics live in the note) ── */
 const DRAINS = {
@@ -370,7 +372,7 @@ function Sheet({ mode, onPick, onClose }) {
   const [amount, setAmount] = useState(1);
   const [step, setStep] = useState("count");
   const groups = mode === "build" ? BUILDS : DRAINS;
-  const order = mode === "build" ? ["physical", "mental"] : ["mental", "physical"];
+  const order = ["mental", "physical"];
   const heading = mode === "build" ? "Gained" : "Spent";
   return (
     <div style={styles.scrim} onClick={onClose}>
@@ -477,6 +479,73 @@ const fmtDay = (s) =>
 const fmtTime = (ts) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+function SpendGainChart({ days }) {
+  const data = days.map((d) => ({
+    d: d.date,
+    s: d.events.filter((e) => e.type === "drain").reduce((n, e) => n + e.amount, 0),
+    g: d.events.filter((e) => e.type === "build").reduce((n, e) => n + e.amount, 0),
+  }));
+  if (!data.length) return null;
+  const maxVal = Math.max(1, ...data.flatMap((x) => [x.s, x.g]));
+  const maxCells = 12;
+  const scale = Math.max(1, Math.ceil(maxVal / maxCells));
+  const cell = 8,
+    gap = 2,
+    pairGap = 2,
+    groupGap = 10;
+  const gw = cell * 2 + pairGap;
+  const stepX = gw + groupGap;
+  const rows = Math.ceil(maxVal / scale);
+  const chartH = rows * (cell + gap);
+  const labelH = 16;
+  const width = data.length * stepX;
+  const cellsFor = (v) => (v <= 0 ? 0 : Math.max(1, Math.round(v / scale)));
+  const col = (x, v, color, key) => {
+    const n = cellsFor(v);
+    const out = [];
+    for (let c = 0; c < n; c++) {
+      const y = chartH - (c + 1) * (cell + gap) + gap;
+      out.push(<rect key={key + c} x={x} y={y} width={cell} height={cell} fill={color} />);
+    }
+    return out;
+  };
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <svg
+        width={Math.max(width, 1)}
+        height={chartH + labelH}
+        shapeRendering="crispEdges"
+        style={{ display: "block" }}
+      >
+        {data.map((x, i) => {
+          const gx = i * stepX;
+          return (
+            <g key={x.d}>
+              {col(gx, x.s, C.spentBar, "s" + i)}
+              {col(gx + cell + pairGap, x.g, C.gainBar, "g" + i)}
+              <text
+                x={gx + gw / 2}
+                y={chartH + 12}
+                textAnchor="middle"
+                fontSize="9"
+                fill={C.inkFaint}
+                fontFamily={MONO}
+              >
+                {x.d.slice(8)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {scale > 1 && (
+        <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 4 }}>
+          each block = {scale} spoons
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Insights({ today }) {
   const [days, setDays] = useState(null);
   const [range, setRange] = useState("week");
@@ -543,6 +612,19 @@ function Insights({ today }) {
             <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
               <span>net</span>
               <span>{a.net > 0 ? "+" : ""}{a.net}</span>
+            </div>
+          </div>
+
+          <div>
+            <div style={styles.smallLabel}>spends &amp; gains</div>
+            <SpendGainChart days={[...inRange].reverse().slice(-14)} />
+            <div style={styles.legend}>
+              <span>
+                <i style={{ ...styles.swatch, background: C.spentBar }} /> spent
+              </span>
+              <span>
+                <i style={{ ...styles.swatch, background: C.gainBar }} /> gained
+              </span>
             </div>
           </div>
 
@@ -891,5 +973,21 @@ const styles = {
     padding: "5px 0",
     fontSize: 13,
     color: C.ink,
+  },
+  legend: {
+    display: "flex",
+    gap: 18,
+    marginTop: 10,
+    fontSize: 12,
+    color: C.inkSoft,
+    alignItems: "center",
+  },
+  swatch: {
+    display: "inline-block",
+    width: 10,
+    height: 10,
+    marginRight: 6,
+    border: `1px solid ${C.line}`,
+    verticalAlign: "middle",
   },
 };
