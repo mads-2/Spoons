@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.11.1";
+export const APP_VERSION = "0.12.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -107,24 +107,28 @@ function levelOf(day) {
 }
 
 /* ── pixel spoon (the signature element) ─────────────────────── */
-const SP = 16;
+const SP = 20;
 const SPRITE = [
-  "                ",
-  "          LHHL  ",
-  "         LMDDML ",
-  "        LMMDMMH ",
-  "        LMMDMML ",
-  "       LLMDMMM  ",
-  "       LLLMMM   ",
-  "      LLLMM     ",
-  "      LD        ",
-  "     LD         ",
-  "    LD          ",
-  "   LD           ",
-  "  LD            ",
-  " LD             ",
-  " D              ",
-  "                ",
+  "              HLLLH ",
+  "            HHLDMMLH",
+  "           HMMMDDMML",
+  "          HLDDDDDMML",
+  "         HMDDDMMMMLH",
+  "         HMDDMMMMLLL",
+  "         HMDMMMMMLLL",
+  "         HMDMMMMHML ",
+  "        HLLLHHHHMH  ",
+  "       HHHLDDMMMH   ",
+  "      HHLLMMMMLL    ",
+  "     HHHLML         ",
+  "    HHLLDH          ",
+  "   HHLLMH           ",
+  "  HHLLML            ",
+  " HHHLMM             ",
+  "HHHLDH              ",
+  "LLLDH               ",
+  "MMMM                ",
+  "MDM                 ",
 ];
 const TONE = { H: "hi", L: "li", M: "mid", D: "dk" };
 const SPOON_CELLS = [];
@@ -161,7 +165,7 @@ function SpoonCluster({ level, max }) {
       aria-label={`${level} of ${max} spoons remaining`}
     >
       {Array.from({ length: max }).map((_, i) => (
-        <SpoonIcon key={i} filled={i < filled} />
+        <SpoonIcon key={i} filled={i < filled} px={2} />
       ))}
     </div>
   );
@@ -453,7 +457,7 @@ export default function App() {
             )}
           </main>
         ) : (
-          <Insights today={isToday ? day : null} />
+          <Insights active={day} />
         )}
       </div>
 
@@ -668,30 +672,53 @@ function SpendGainChart({ days }) {
   );
 }
 
-function Insights({ today }) {
+function Insights({ active }) {
   const [days, setDays] = useState(null);
   const [range, setRange] = useState("week");
   const [open, setOpen] = useState(null);
 
   useEffect(() => {
     (async () => {
-      const keys = await slist("day:");
-      const recs = [];
-      for (const k of keys) {
+      const map = new Map();
+      const add = (k, d) =>
+        map.set(k, {
+          key: k,
+          date: k.slice(4),
+          start: d.start,
+          startNote: d.startNote || "",
+          untracked: d.untracked || false,
+          events: d.events || [],
+        });
+      // breadth: everything the key listing returns
+      try {
+        const keys = await slist("day:");
+        for (const k of keys) {
+          const d = await sget(k);
+          if (d) add(k, d);
+        }
+      } catch {}
+      // robustness: fetch the last 45 days directly by key, in case listing lags
+      for (let i = 0; i < 45; i++) {
+        const k = "day:" + daysAgo(i);
+        if (map.has(k)) continue;
         const d = await sget(k);
-        if (d) recs.push({ key: k, date: k.slice(4), start: d.start, startNote: d.startNote || "", untracked: d.untracked || false, events: d.events || [] });
+        if (d) add(k, d);
       }
-      if (today) {
-        const tk = "day:" + new Date().toLocaleDateString("en-CA");
-        const tRec = { key: tk, date: tk.slice(4), start: today.start, startNote: today.startNote || "", untracked: today.untracked || false, events: today.events || [] };
-        const i = recs.findIndex((r) => r.key === tk);
-        if (i >= 0) recs[i] = tRec;
-        else recs.push(tRec);
+      // always include the day currently open in the tracker (freshest edits)
+      if (active) {
+        map.set("day:" + active.date, {
+          key: "day:" + active.date,
+          date: active.date,
+          start: active.start,
+          startNote: active.startNote || "",
+          untracked: active.untracked || false,
+          events: active.events || [],
+        });
       }
-      recs.sort((a, b) => (a.date < b.date ? 1 : -1));
+      const recs = [...map.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
       setDays(recs);
     })();
-  }, [today]);
+  }, [active]);
 
   if (!days)
     return (

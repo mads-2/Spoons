@@ -3,6 +3,10 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.12.0
+- Spoon redrawn at 20px, derived directly from the reference image (faithful bowl + thin curved-shadow handle).
+- Fixed insights showing only today: recent days are now fetched directly by date key (plus the open day), not only via key listing.
+
 ## 0.11.1
 - Spoon: narrower handle; bowl shadow given a slight curve.
 
