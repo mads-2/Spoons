@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.8.0";
+export const APP_VERSION = "0.9.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -16,6 +16,7 @@ const C = {
   chipMent: "#C9CDD2",
   spentBar: "#D9ABAB",
   gainBar: "#A9C7A5",
+  physBar: "#5E8CB5",
 };
 
 /* pixel spoon tones — original sprite colors; bowl center (dk) nudged slightly lighter */
@@ -176,13 +177,14 @@ export default function App() {
   const [editNote, setEditNote] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [startNoteDraft, setStartNoteDraft] = useState("");
 
   useEffect(() => {
     (async () => {
       const m = (await sget("meta:v1")) || { version: 1, defaultStart: DEFAULT_START };
       let d = await sget(dayKey());
       if (!d) {
-        d = { v: 1, date: dayKey().slice(4), start: m.defaultStart, events: [] };
+        d = { v: 1, date: dayKey().slice(4), start: m.defaultStart, startNote: "", events: [] };
         await sset(dayKey(), d);
       }
       setMeta(m);
@@ -235,6 +237,9 @@ export default function App() {
   async function setStart(n) {
     await persist({ ...day, start: Math.max(0, n) });
   }
+  async function saveStartNote() {
+    await persist({ ...day, startNote: startNoteDraft });
+  }
   async function exportData() {
     const keys = await slist("day:");
     const out = { exportedAt: new Date().toISOString(), version: 1, days: {} };
@@ -286,20 +291,41 @@ export default function App() {
                 {level}
                 <span style={S.countOf}> / {max}</span>
               </div>
-              <button style={S.ofLine} onClick={() => setAdjusting((v) => !v)}>
+              <button
+                style={S.ofLine}
+                onClick={() => {
+                  if (!adjusting) setStartNoteDraft((day && day.startNote) || "");
+                  setAdjusting((v) => !v);
+                }}
+              >
                 adjust today’s start
               </button>
             </div>
 
             {adjusting && (
-              <div style={S.adjust}>
+              <div style={S.adjustCol}>
                 <span style={{ color: C.inkSoft, fontSize: 13 }}>today’s start</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                   <button style={S.step} onClick={() => setStart(max - 1)}>−</button>
                   <span style={{ fontSize: 22, minWidth: 28, textAlign: "center" }}>{max}</span>
                   <button style={S.step} onClick={() => setStart(max + 1)}>+</button>
                 </div>
-                <button style={S.linkBtn} onClick={() => setAdjusting(false)}>done</button>
+                <input
+                  value={startNoteDraft}
+                  placeholder="note? (e.g. woke up depleted)"
+                  onChange={(e) => setStartNoteDraft(e.target.value)}
+                  onBlur={saveStartNote}
+                  style={{ ...S.note, flex: "none", width: "100%", minWidth: 0 }}
+                />
+                <button
+                  style={S.linkBtn}
+                  onClick={() => {
+                    saveStartNote();
+                    setAdjusting(false);
+                  }}
+                >
+                  done
+                </button>
               </div>
             )}
 
@@ -447,7 +473,7 @@ function rangeCutoff(r) {
   return null;
 }
 function aggregate(days) {
-  let spent = 0, gained = 0, mDr = 0, pDr = 0, zero = 0;
+  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0;
   days.forEach((d) => {
     d.events.forEach((e) => {
       if (e.type === "drain") {
@@ -456,11 +482,31 @@ function aggregate(days) {
         else if (e.axis === "physical") pDr += e.amount;
       } else {
         gained += e.amount;
+        if (e.axis === "mental") mGn += e.amount;
+        else if (e.axis === "physical") pGn += e.amount;
       }
     });
     if (d.events.length && levelOf(d) <= 0) zero++;
   });
-  return { spent, gained, net: gained - spent, mDr, pDr, zero, nDays: days.length };
+  return { spent, gained, net: gained - spent, mDr, pDr, mGn, pGn, zero, nDays: days.length };
+}
+function AxisBar({ label, mental, physical }) {
+  const total = mental + physical;
+  if (!total) return null;
+  const mPct = Math.round((mental / total) * 100);
+  return (
+    <div>
+      <div style={styles.smallLabel}>{label} — mental vs physical</div>
+      <div style={styles.bar2}>
+        <div style={{ ...styles.seg, width: mPct + "%", background: C.chipMent }} />
+        <div style={{ ...styles.seg, width: 100 - mPct + "%", background: C.physBar }} />
+      </div>
+      <div style={styles.barLabel}>
+        <span>{mental} mental</span>
+        <span>{physical} physical</span>
+      </div>
+    </div>
+  );
 }
 const RANGES = [
   ["day", "day"],
@@ -556,11 +602,11 @@ function Insights({ today }) {
       const recs = [];
       for (const k of keys) {
         const d = await sget(k);
-        if (d) recs.push({ key: k, date: k.slice(4), start: d.start, events: d.events || [] });
+        if (d) recs.push({ key: k, date: k.slice(4), start: d.start, startNote: d.startNote || "", events: d.events || [] });
       }
       if (today) {
         const tk = "day:" + new Date().toLocaleDateString("en-CA");
-        const tRec = { key: tk, date: tk.slice(4), start: today.start, events: today.events || [] };
+        const tRec = { key: tk, date: tk.slice(4), start: today.start, startNote: today.startNote || "", events: today.events || [] };
         const i = recs.findIndex((r) => r.key === tk);
         if (i >= 0) recs[i] = tRec;
         else recs.push(tRec);
@@ -580,8 +626,6 @@ function Insights({ today }) {
   const cut = rangeCutoff(range);
   const inRange = days.filter((d) => !cut || d.date >= cut);
   const a = aggregate(inRange);
-  const drTotal = a.mDr + a.pDr;
-  const pPct = drTotal ? Math.round((a.pDr / drTotal) * 100) : 0;
 
   return (
     <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left", gap: 18 }}>
@@ -615,7 +659,7 @@ function Insights({ today }) {
           </div>
 
           <div>
-            <div style={styles.smallLabel}>spends &amp; gains</div>
+            <div style={styles.smallLabel}>spent vs gained · by day</div>
             <SpendGainChart days={[...inRange].reverse().slice(-14)} />
             <div style={styles.legend}>
               <span>
@@ -627,19 +671,8 @@ function Insights({ today }) {
             </div>
           </div>
 
-          {drTotal > 0 && (
-            <div>
-              <div style={styles.smallLabel}>drains — mental vs physical</div>
-              <div style={styles.bar2}>
-                <div style={{ ...styles.seg, width: 100 - pPct + "%", background: C.chipMent }} />
-                <div style={{ ...styles.seg, width: pPct + "%", background: C.chipPhys }} />
-              </div>
-              <div style={styles.barLabel}>
-                <span>{a.mDr} mental</span>
-                <span>{a.pDr} physical</span>
-              </div>
-            </div>
-          )}
+          <AxisBar label="drains" mental={a.mDr} physical={a.pDr} />
+          <AxisBar label="gains" mental={a.mGn} physical={a.pGn} />
 
           <div style={styles.mirror}>
             <div style={styles.mirrorRow}>
@@ -670,6 +703,11 @@ function Insights({ today }) {
                   </button>
                   {isOpen && (
                     <div style={styles.evList}>
+                      <div style={{ ...styles.evRow, color: C.inkSoft }}>
+                        <span style={{ minWidth: 50 }}>start</span>
+                        <span style={{ minWidth: 26 }}>{d.start}</span>
+                        <span style={{ flex: 1, color: C.inkFaint }}>{d.startNote || ""}</span>
+                      </div>
                       {d.events.length === 0 && (
                         <div style={{ ...styles.evRow, color: C.inkFaint }}>no entries</div>
                       )}
@@ -781,6 +819,19 @@ const styles = {
     color: C.inkSoft,
   },
   linkBtn: { fontSize: 13, color: C.inkSoft },
+  adjustCol: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 12,
+    background: C.surface,
+    border: `1px solid ${C.line}`,
+    borderRadius: 0,
+    padding: "14px 18px",
+    marginTop: 6,
+    width: "100%",
+    maxWidth: 320,
+  },
   zero: {
     maxWidth: 300,
     textAlign: "center",

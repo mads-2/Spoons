@@ -3,6 +3,11 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.9.0
+- Insights: separate DRAINS and GAINS breakdown bars (mental vs physical); physical now a darker saturated blue.
+- Per-day chart relabeled 'spent vs gained · by day'.
+- Adjusting the day's start now takes an optional note (e.g. 'woke up depleted'); shown in that day's history.
+
 ## 0.8.0
 - Insights chart: spent = light red, gained = light green; legend matched.
 - Builders: removed 'eating / drinking' from physical; moved 'resting' from mental to physical.
