@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.5.0";
+export const APP_VERSION = "0.6.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -12,11 +12,13 @@ const C = {
   inkSoft: "#4F5B66",
   inkFaint: "#74818D",
   accent: "#7C93A6",
+  chipPhys: "#BFD0E0",
+  chipMent: "#C9CDD2",
 };
 
-/* pixel spoon tones — matched to the user's hand-drawn sprite */
-const SPOON_FILL = { hi: "#EAEEF3", li: "#CAD3DF", mid: "#9FAEC0", dk: "#7C8CA4" };
-const SPOON_SPENT = { hi: "#D7DCE2", li: "#C7CED6", mid: "#B6BFC9", dk: "#A4AEBA" };
+/* pixel spoon tones — matched to the user's sprite, centers lightened to grey */
+const SPOON_FILL = { hi: "#EDF0F3", li: "#D7DCE1", mid: "#BFC4CA", dk: "#A9AEB4" };
+const SPOON_SPENT = { hi: "#DADDE1", li: "#CFD2D6", mid: "#C3C7CB", dk: "#B6BABF" };
 
 /* ── categories (states, broad — specifics live in the note) ── */
 const DRAINS = {
@@ -39,14 +41,14 @@ const DRAINS = {
   ],
 };
 const BUILDS = {
-  physical: ["movement", "eating / drinking", "fun activities", "other (physical)"],
+  physical: ["movement", "eating / drinking", "fun activities", "other"],
   mental: [
     "personal relationships",
     "resting",
     "play",
     "having a win",
     "being inspired",
-    "other (mental)",
+    "other",
   ],
 };
 
@@ -347,7 +349,7 @@ export default function App() {
             )}
           </main>
         ) : (
-          <Insights day={day} />
+          <Insights today={day} />
         )}
       </div>
 
@@ -410,7 +412,14 @@ function Sheet({ mode, onPick, onClose }) {
                 <div style={styles.axisLabel}>{axis}</div>
                 <div style={styles.chips}>
                   {groups[axis].map((cat) => (
-                    <button key={cat} style={styles.chip} onClick={() => onPick(axis, cat, amount)}>
+                    <button
+                      key={cat}
+                      style={{
+                        ...styles.chip,
+                        background: axis === "physical" ? C.chipPhys : C.chipMent,
+                      }}
+                      onClick={() => onPick(axis, cat, amount)}
+                    >
                       {cat}
                     </button>
                   ))}
@@ -424,34 +433,188 @@ function Sheet({ mode, onPick, onClose }) {
   );
 }
 
-function Insights({ day }) {
-  const evs = (day && day.events) || [];
-  const sum = (t) => evs.filter((e) => e.type === t).reduce((n, e) => n + e.amount, 0);
-  const mental = evs.filter((e) => e.type === "drain" && e.axis === "mental").length;
-  const physical = evs.filter((e) => e.type === "drain" && e.axis === "physical").length;
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toLocaleDateString("en-CA");
+}
+function rangeCutoff(r) {
+  if (r === "day") return new Date().toLocaleDateString("en-CA");
+  if (r === "week") return daysAgo(6);
+  if (r === "month") return daysAgo(29);
+  if (r === "year") return daysAgo(364);
+  return null;
+}
+function aggregate(days) {
+  let spent = 0, gained = 0, mDr = 0, pDr = 0, zero = 0;
+  days.forEach((d) => {
+    d.events.forEach((e) => {
+      if (e.type === "drain") {
+        spent += e.amount;
+        if (e.axis === "mental") mDr += e.amount;
+        else if (e.axis === "physical") pDr += e.amount;
+      } else {
+        gained += e.amount;
+      }
+    });
+    if (d.events.length && levelOf(d) <= 0) zero++;
+  });
+  return { spent, gained, net: gained - spent, mDr, pDr, zero, nDays: days.length };
+}
+const RANGES = [
+  ["day", "day"],
+  ["week", "week"],
+  ["month", "month"],
+  ["year", "year"],
+  ["all", "all time"],
+];
+const fmtDay = (s) =>
+  new Date(s + "T00:00").toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+const fmtTime = (ts) =>
+  new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+function Insights({ today }) {
+  const [days, setDays] = useState(null);
+  const [range, setRange] = useState("week");
+  const [open, setOpen] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const keys = await slist("day:");
+      const recs = [];
+      for (const k of keys) {
+        const d = await sget(k);
+        if (d) recs.push({ key: k, date: k.slice(4), start: d.start, events: d.events || [] });
+      }
+      if (today) {
+        const tk = "day:" + new Date().toLocaleDateString("en-CA");
+        const tRec = { key: tk, date: tk.slice(4), start: today.start, events: today.events || [] };
+        const i = recs.findIndex((r) => r.key === tk);
+        if (i >= 0) recs[i] = tRec;
+        else recs.push(tRec);
+      }
+      recs.sort((a, b) => (a.date < b.date ? 1 : -1));
+      setDays(recs);
+    })();
+  }, [today]);
+
+  if (!days)
+    return (
+      <main style={{ ...styles.main, alignItems: "stretch" }}>
+        <span style={{ color: C.inkSoft }}>…</span>
+      </main>
+    );
+
+  const cut = rangeCutoff(range);
+  const inRange = days.filter((d) => !cut || d.date >= cut);
+  const a = aggregate(inRange);
+  const drTotal = a.mDr + a.pDr;
+  const pPct = drTotal ? Math.round((a.pDr / drTotal) * 100) : 0;
+
   return (
-    <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left" }}>
-      <p style={{ color: C.inkSoft, lineHeight: 1.6, fontSize: 14 }}>
-        Not enough here yet to say anything you couldn’t already feel. A few days of use and
-        patterns will start to show — stated plainly, only when they’re true.
-      </p>
-      {evs.length > 0 && (
-        <div style={styles.mirror}>
-          <div style={styles.mirrorRow}>
-            <span>today</span>
-            <span>
-              spent {sum("drain")} · back {sum("build")}
-            </span>
-          </div>
-          {(mental > 0 || physical > 0) && (
+    <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left", gap: 18 }}>
+      <div style={styles.rangeRow}>
+        {RANGES.map(([r, label]) => (
+          <button key={r} style={styles.rangeBtn(range === r)} onClick={() => setRange(r)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {a.nDays === 0 ? (
+        <p style={{ color: C.inkSoft, fontSize: 14, lineHeight: 1.6 }}>
+          Nothing logged in this window yet.
+        </p>
+      ) : (
+        <>
+          <div style={styles.mirror}>
+            <div style={styles.mirrorRow}>
+              <span>spent</span>
+              <span>{a.spent}</span>
+            </div>
+            <div style={styles.mirrorRow}>
+              <span>gained</span>
+              <span>{a.gained}</span>
+            </div>
             <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
-              <span>drains</span>
-              <span>
-                {mental} mental · {physical} physical
-              </span>
+              <span>net</span>
+              <span>{a.net > 0 ? "+" : ""}{a.net}</span>
+            </div>
+          </div>
+
+          {drTotal > 0 && (
+            <div>
+              <div style={styles.smallLabel}>drains — physical vs mental</div>
+              <div style={styles.bar2}>
+                <div style={{ ...styles.seg, width: pPct + "%", background: C.chipPhys }} />
+                <div style={{ ...styles.seg, width: 100 - pPct + "%", background: C.chipMent }} />
+              </div>
+              <div style={styles.barLabel}>
+                <span>{a.pDr} physical</span>
+                <span>{a.mDr} mental</span>
+              </div>
             </div>
           )}
-        </div>
+
+          <div style={styles.mirror}>
+            <div style={styles.mirrorRow}>
+              <span>days tracked</span>
+              <span>{a.nDays}</span>
+            </div>
+            <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
+              <span>reached empty</span>
+              <span>{a.zero}</span>
+            </div>
+          </div>
+
+          <div>
+            <div style={styles.smallLabel}>history</div>
+            {inRange.map((d) => {
+              const sp = d.events.filter((e) => e.type === "drain").reduce((n, e) => n + e.amount, 0);
+              const bk = d.events.filter((e) => e.type === "build").reduce((n, e) => n + e.amount, 0);
+              const isOpen = open === d.date;
+              return (
+                <div key={d.date} style={styles.dayWrap}>
+                  <button style={styles.dayRow} onClick={() => setOpen(isOpen ? null : d.date)}>
+                    <span>
+                      {isOpen ? "▾" : "▸"} {fmtDay(d.date)}
+                    </span>
+                    <span style={{ color: C.inkSoft }}>
+                      spent {sp} · back {bk}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div style={styles.evList}>
+                      {d.events.length === 0 && (
+                        <div style={{ ...styles.evRow, color: C.inkFaint }}>no entries</div>
+                      )}
+                      {[...d.events]
+                        .sort((x, y) => (x.ts < y.ts ? -1 : 1))
+                        .map((e) => (
+                          <div key={e.id} style={styles.evRow}>
+                            <span style={{ color: C.inkFaint, minWidth: 50 }}>{fmtTime(e.ts)}</span>
+                            <span style={{ minWidth: 26 }}>
+                              {e.type === "build" ? "+" : "−"}
+                              {e.amount}
+                            </span>
+                            <span style={{ flex: 1 }}>
+                              {e.category}
+                              {e.axis ? <span style={{ color: C.inkFaint }}> · {e.axis}</span> : null}
+                              {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </main>
   );
@@ -485,12 +648,15 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "18px 22px",
+    padding: "16px 22px",
+    borderBottom: `1px solid ${C.line}`,
   },
-  wordmark: { fontSize: 14, letterSpacing: 1, color: C.inkSoft },
+  wordmark: { fontSize: 14, letterSpacing: 2, color: C.ink, textTransform: "uppercase" },
   ver: { fontSize: 11, color: C.inkFaint },
   navlink: (on) => ({
     fontSize: 13,
+    letterSpacing: 1,
+    textTransform: "uppercase",
     color: on ? C.ink : C.inkFaint,
     paddingBottom: 2,
     borderBottom: on ? `2px solid ${C.ink}` : "2px solid transparent",
@@ -520,14 +686,14 @@ const styles = {
     gap: 16,
     background: C.surface,
     border: `1px solid ${C.line}`,
-    borderRadius: 4,
+    borderRadius: 0,
     padding: "12px 18px",
     marginTop: 6,
   },
   step: {
     width: 44,
     height: 44,
-    borderRadius: 4,
+    borderRadius: 0,
     border: `1px solid ${C.line}`,
     background: C.surfaceDim,
     fontSize: 22,
@@ -548,7 +714,7 @@ const styles = {
     minHeight: 58,
     background: C.surface,
     border: `1px solid ${C.ink}`,
-    borderRadius: 4,
+    borderRadius: 0,
     fontSize: 17,
     color: C.ink,
   },
@@ -575,7 +741,7 @@ const styles = {
     flex: 1,
     minWidth: 140,
     padding: "12px 14px",
-    borderRadius: 4,
+    borderRadius: 0,
     border: `1px solid ${C.line}`,
     background: C.surface,
     fontSize: 14,
@@ -585,7 +751,7 @@ const styles = {
   enter: {
     minHeight: 44,
     padding: "0 18px",
-    borderRadius: 4,
+    borderRadius: 0,
     border: `1px solid ${C.ink}`,
     background: C.surfaceDim,
     color: C.ink,
@@ -594,7 +760,7 @@ const styles = {
   skipBtn: {
     minHeight: 44,
     padding: "0 18px",
-    borderRadius: 4,
+    borderRadius: 0,
     border: `1px solid ${C.line}`,
     background: C.surface,
     color: C.inkSoft,
@@ -613,7 +779,7 @@ const styles = {
     maxWidth: 480,
     background: C.paper,
     borderTop: `2px solid ${C.ink}`,
-    borderRadius: "4px 4px 0 0",
+    borderRadius: 0,
     padding: "10px 20px 28px",
     maxHeight: "78vh",
     overflowY: "auto",
@@ -625,7 +791,7 @@ const styles = {
   quick: (on) => ({
     width: 50,
     height: 50,
-    borderRadius: 4,
+    borderRadius: 0,
     border: `1px solid ${on ? C.ink : C.line}`,
     background: on ? C.surfaceDim : C.surface,
     fontSize: 18,
@@ -636,23 +802,30 @@ const styles = {
     padding: "0 24px",
     background: C.surface,
     border: `1px solid ${C.ink}`,
-    borderRadius: 4,
+    borderRadius: 0,
     fontSize: 15,
     color: C.ink,
   },
   back: { fontSize: 13, color: C.inkSoft, marginBottom: 16, minHeight: 36 },
-  axisLabel: { fontSize: 12, letterSpacing: 1, color: C.inkFaint, marginBottom: 10, textTransform: "uppercase" },
+  axisLabel: {
+    fontSize: 14,
+    letterSpacing: 1,
+    color: C.ink,
+    fontWeight: 600,
+    marginBottom: 10,
+    textTransform: "uppercase",
+  },
   chips: { display: "flex", flexWrap: "wrap", gap: 10 },
   chip: {
     minHeight: 48,
     padding: "0 16px",
     background: C.surface,
     border: `1px solid ${C.line}`,
-    borderRadius: 4,
+    borderRadius: 0,
     fontSize: 14,
     color: C.ink,
   },
-  mirror: { width: "100%", marginTop: 22, border: `1px solid ${C.line}`, borderRadius: 4, background: C.surface },
+  mirror: { width: "100%", border: `1px solid ${C.line}`, borderRadius: 0, background: C.surface },
   mirrorRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -660,5 +833,63 @@ const styles = {
     fontSize: 14,
     color: C.ink,
     borderBottom: `1px solid ${C.line}`,
+  },
+  rangeRow: { display: "flex", flexWrap: "wrap", gap: 6 },
+  rangeBtn: (on) => ({
+    flex: 1,
+    minWidth: 56,
+    minHeight: 38,
+    padding: "0 6px",
+    border: `1px solid ${on ? C.ink : C.line}`,
+    background: on ? C.surfaceDim : C.surface,
+    color: on ? C.ink : C.inkSoft,
+    fontSize: 12,
+    borderRadius: 0,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  }),
+  smallLabel: {
+    fontSize: 12,
+    color: C.ink,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  bar2: {
+    display: "flex",
+    width: "100%",
+    height: 14,
+    border: `1px solid ${C.line}`,
+    overflow: "hidden",
+  },
+  seg: { height: "100%" },
+  barLabel: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginTop: 6,
+    fontSize: 12,
+    color: C.inkSoft,
+  },
+  dayWrap: { borderTop: `1px solid ${C.line}` },
+  dayRow: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+    padding: "12px 2px",
+    fontSize: 13,
+    color: C.ink,
+    textAlign: "left",
+  },
+  evList: { padding: "0 2px 12px" },
+  evRow: {
+    display: "flex",
+    gap: 10,
+    alignItems: "baseline",
+    padding: "5px 0",
+    fontSize: 13,
+    color: C.ink,
   },
 };

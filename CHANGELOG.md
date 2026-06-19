@@ -3,6 +3,12 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.6.0
+- Insights: day/week/month/year/all-time ranges, spent/gained/net + physical-vs-mental bar, expandable per-day full history.
+- Category chips colored by axis (physical light blue, mental light grey); bigger/darker MENTAL/PHYSICAL headers.
+- Build 'other' relabeled to plain 'other' (axis still stored).
+- Uppercase monospace title bar; all rounded corners removed; spoon centers lightened to grey.
+
 ## 0.5.0
 - Replaced the spoon with your hand-drawn pixel sprite (pale blue-gray, diagonal bowl).
 
