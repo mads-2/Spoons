@@ -3,6 +3,11 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.13.0
+- Structural perf fix: insights now reads a single per-day summary index (1 request) instead of every day's full event log.
+- A day's individual entries load lazily, only when you expand that day.
+- The index is built once and kept in sync on every change.
+
 ## 0.12.2
 - Insights loads fast now (storage reads batched in parallel instead of sequential).
 - Track-tab Spent/Gained buttons made much paler (chart colors unchanged).

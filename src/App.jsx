@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
-export const APP_VERSION = "0.12.2";
+export const APP_VERSION = "0.13.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -190,10 +190,40 @@ export default function App() {
   const isToday = activeDate === todayStr;
 
   // settings, once
+  const indexRef = useRef(null);
+
   useEffect(() => {
     (async () => {
       const m = (await sget("meta:v1")) || { version: 1, defaultStart: DEFAULT_START };
       setMeta(m);
+    })();
+  }, []);
+
+  // load (or one-time build) the per-day summary index that powers insights fast
+  useEffect(() => {
+    (async () => {
+      let idx = await sget("index:v1");
+      if (!idx) {
+        idx = { v: 1, days: {} };
+        const keys = new Set();
+        try {
+          (await slist("day:")).forEach((k) => keys.add(k));
+        } catch {}
+        for (let i = 0; i < 60; i++) keys.add("day:" + daysAgo(i));
+        const res = await Promise.all(
+          [...keys].map(async (k) => {
+            try {
+              const d = await sget(k);
+              return d ? [k.slice(4), d] : null;
+            } catch {
+              return null;
+            }
+          })
+        );
+        for (const r of res) if (r) idx.days[r[0]] = summarize(r[1]);
+        await sset("index:v1", idx);
+      }
+      indexRef.current = idx;
     })();
   }, []);
 
@@ -216,6 +246,11 @@ export default function App() {
   const persist = useCallback(async (next) => {
     setDay(next);
     await sset("day:" + next.date, next);
+    let idx = indexRef.current;
+    if (!idx) idx = (await sget("index:v1")) || { v: 1, days: {} };
+    idx.days[next.date] = summarize(next);
+    indexRef.current = idx;
+    await sset("index:v1", idx);
   }, []);
 
   const level = levelOf(day);
@@ -565,6 +600,44 @@ function rangeCutoff(r) {
   if (r === "year") return daysAgo(364);
   return null;
 }
+function summarize(d) {
+  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0;
+  for (const e of d.events || []) {
+    if (e.type === "drain") {
+      spent += e.amount;
+      if (e.axis === "mental") mDr += e.amount;
+      else if (e.axis === "physical") pDr += e.amount;
+    } else {
+      gained += e.amount;
+      if (e.axis === "mental") mGn += e.amount;
+      else if (e.axis === "physical") pGn += e.amount;
+    }
+  }
+  const n = (d.events || []).length;
+  const level = (d.start || 0) - spent + gained;
+  return {
+    start: d.start,
+    startNote: d.startNote || "",
+    untracked: !!d.untracked,
+    n,
+    spent,
+    gained,
+    mDr,
+    pDr,
+    mGn,
+    pGn,
+    empty: n > 0 && level <= 0,
+  };
+}
+function aggregateSummaries(days) {
+  let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0;
+  for (const d of days) {
+    spent += d.spent; gained += d.gained;
+    mDr += d.mDr; pDr += d.pDr; mGn += d.mGn; pGn += d.pGn;
+    if (d.empty) zero++;
+  }
+  return { spent, gained, net: gained - spent, mDr, pDr, mGn, pGn, zero, nDays: days.length };
+}
 function aggregate(days) {
   let spent = 0, gained = 0, mDr = 0, pDr = 0, mGn = 0, pGn = 0, zero = 0;
   days.forEach((d) => {
@@ -617,12 +690,7 @@ const fmtDay = (s) =>
 const fmtTime = (ts) =>
   new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-function SpendGainChart({ days }) {
-  const data = days.map((d) => ({
-    d: d.date,
-    s: d.events.filter((e) => e.type === "drain").reduce((n, e) => n + e.amount, 0),
-    g: d.events.filter((e) => e.type === "build").reduce((n, e) => n + e.amount, 0),
-  }));
+function SpendGainChart({ data }) {
   if (!data.length) return null;
   const maxVal = Math.max(1, ...data.flatMap((x) => [x.s, x.g]));
   const maxCells = 12;
@@ -685,51 +753,37 @@ function SpendGainChart({ days }) {
 }
 
 function Insights({ active }) {
-  const [days, setDays] = useState(null);
+  const [idx, setIdx] = useState(null);
   const [range, setRange] = useState("week");
   const [open, setOpen] = useState(null);
+  const [eventsCache, setEventsCache] = useState({});
 
   useEffect(() => {
     (async () => {
-      const add = (m, k, d) =>
-        m.set(k, {
-          key: k,
-          date: k.slice(4),
-          start: d.start,
-          startNote: d.startNote || "",
-          untracked: d.untracked || false,
-          events: d.events || [],
-        });
-      // gather all candidate keys first, then fetch them in ONE parallel batch
-      const keys = new Set();
-      try {
-        (await slist("day:")).forEach((k) => keys.add(k));
-      } catch {}
-      for (let i = 0; i < 31; i++) keys.add("day:" + daysAgo(i));
-      if (active) keys.add("day:" + active.date);
-
-      const arr = [...keys];
-      const results = await Promise.all(
-        arr.map(async (k) => {
-          try {
-            const d = await sget(k);
-            return d ? [k, d] : null;
-          } catch {
-            return null;
-          }
-        })
-      );
-      const map = new Map();
-      for (const r of results) if (r) add(map, r[0], r[1]);
-      // freshest copy of the day open in the tracker
-      if (active) add(map, "day:" + active.date, active);
-
-      const recs = [...map.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
-      setDays(recs);
+      const i = (await sget("index:v1")) || { v: 1, days: {} };
+      let days = { ...i.days };
+      if (active) days = { ...days, [active.date]: summarize(active) };
+      setIdx(days);
     })();
   }, [active]);
 
-  if (!days)
+  async function toggleDay(date) {
+    if (open === date) {
+      setOpen(null);
+      return;
+    }
+    setOpen(date);
+    if (eventsCache[date] === undefined) {
+      try {
+        const rec = await sget("day:" + date);
+        setEventsCache((c) => ({ ...c, [date]: (rec && rec.events) || [] }));
+      } catch {
+        setEventsCache((c) => ({ ...c, [date]: [] }));
+      }
+    }
+  }
+
+  if (!idx)
     return (
       <main style={{ ...styles.main, alignItems: "stretch" }}>
         <span style={{ color: C.inkSoft }}>…</span>
@@ -737,9 +791,16 @@ function Insights({ active }) {
     );
 
   const cut = rangeCutoff(range);
-  const inRange = days.filter((d) => !cut || d.date >= cut);
+  const inRange = Object.keys(idx)
+    .filter((d) => !cut || d >= cut)
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((d) => ({ date: d, ...idx[d] }));
   const tracked = inRange.filter((d) => !d.untracked);
-  const a = aggregate(tracked);
+  const a = aggregateSummaries(tracked);
+  const chartData = [...tracked]
+    .reverse()
+    .slice(-14)
+    .map((d) => ({ d: d.date, s: d.spent, g: d.gained }));
 
   return (
     <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left", gap: 18 }}>
@@ -758,65 +819,64 @@ function Insights({ active }) {
       ) : (
         <>
           {a.nDays > 0 && (
-          <>
-          <div style={styles.mirror}>
-            <div style={styles.mirrorRow}>
-              <span>spent</span>
-              <span>{a.spent}</span>
-            </div>
-            <div style={styles.mirrorRow}>
-              <span>gained</span>
-              <span>{a.gained}</span>
-            </div>
-            <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
-              <span>net</span>
-              <span>{a.net > 0 ? "+" : ""}{a.net}</span>
-            </div>
-          </div>
+            <>
+              <div style={styles.mirror}>
+                <div style={styles.mirrorRow}>
+                  <span>spent</span>
+                  <span>{a.spent}</span>
+                </div>
+                <div style={styles.mirrorRow}>
+                  <span>gained</span>
+                  <span>{a.gained}</span>
+                </div>
+                <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
+                  <span>net</span>
+                  <span>{a.net > 0 ? "+" : ""}{a.net}</span>
+                </div>
+              </div>
 
-          <div>
-            <div style={styles.smallLabel}>spent vs gained · by day</div>
-            <SpendGainChart days={[...tracked].reverse().slice(-14)} />
-            <div style={styles.legend}>
-              <span>
-                <i style={{ ...styles.swatch, background: C.spentBar }} /> spent
-              </span>
-              <span>
-                <i style={{ ...styles.swatch, background: C.gainBar }} /> gained
-              </span>
-            </div>
-          </div>
+              <div>
+                <div style={styles.smallLabel}>spent vs gained · by day</div>
+                <SpendGainChart data={chartData} />
+                <div style={styles.legend}>
+                  <span>
+                    <i style={{ ...styles.swatch, background: C.spentBar }} /> spent
+                  </span>
+                  <span>
+                    <i style={{ ...styles.swatch, background: C.gainBar }} /> gained
+                  </span>
+                </div>
+              </div>
 
-          <AxisBar label="drains" mental={a.mDr} physical={a.pDr} />
-          <AxisBar label="gains" mental={a.mGn} physical={a.pGn} />
+              <AxisBar label="drains" mental={a.mDr} physical={a.pDr} />
+              <AxisBar label="gains" mental={a.mGn} physical={a.pGn} />
 
-          <div style={styles.mirror}>
-            <div style={styles.mirrorRow}>
-              <span>days tracked</span>
-              <span>{a.nDays}</span>
-            </div>
-            <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
-              <span>reached empty</span>
-              <span>{a.zero}</span>
-            </div>
-          </div>
-          </>
+              <div style={styles.mirror}>
+                <div style={styles.mirrorRow}>
+                  <span>days tracked</span>
+                  <span>{a.nDays}</span>
+                </div>
+                <div style={{ ...styles.mirrorRow, borderBottom: "none" }}>
+                  <span>reached empty</span>
+                  <span>{a.zero}</span>
+                </div>
+              </div>
+            </>
           )}
 
           <div>
             <div style={styles.smallLabel}>history</div>
             {inRange.map((d) => {
-              const sp = d.events.filter((e) => e.type === "drain").reduce((n, e) => n + e.amount, 0);
-              const bk = d.events.filter((e) => e.type === "build").reduce((n, e) => n + e.amount, 0);
               const isOpen = open === d.date;
+              const evs = eventsCache[d.date];
               return (
                 <div key={d.date} style={styles.dayWrap}>
-                  <button style={styles.dayRow} onClick={() => setOpen(isOpen ? null : d.date)}>
+                  <button style={styles.dayRow} onClick={() => toggleDay(d.date)}>
                     <span>
                       {isOpen ? "▾" : "▸"} {fmtDay(d.date)}
                     </span>
                     <span style={{ color: C.inkSoft }}>
-                      {d.untracked ? "untracked" : `spent ${sp} · back ${bk}`}
+                      {d.untracked ? "untracked" : `spent ${d.spent} · back ${d.gained}`}
                     </span>
                   </button>
                   {isOpen && (
@@ -826,25 +886,29 @@ function Insights({ active }) {
                         <span style={{ minWidth: 26 }}>{d.start}</span>
                         <span style={{ flex: 1, color: C.inkFaint }}>{d.startNote || ""}</span>
                       </div>
-                      {d.events.length === 0 && (
+                      {evs === undefined && (
+                        <div style={{ ...styles.evRow, color: C.inkFaint }}>…</div>
+                      )}
+                      {evs && evs.length === 0 && (
                         <div style={{ ...styles.evRow, color: C.inkFaint }}>no entries</div>
                       )}
-                      {[...d.events]
-                        .sort((x, y) => (x.ts < y.ts ? -1 : 1))
-                        .map((e) => (
-                          <div key={e.id} style={styles.evRow}>
-                            <span style={{ color: C.inkFaint, minWidth: 50 }}>{fmtTime(e.ts)}</span>
-                            <span style={{ minWidth: 26 }}>
-                              {e.type === "build" ? "+" : "−"}
-                              {e.amount}
-                            </span>
-                            <span style={{ flex: 1 }}>
-                              {e.category}
-                              {e.axis ? <span style={{ color: C.inkFaint }}> · {e.axis}</span> : null}
-                              {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
-                            </span>
-                          </div>
-                        ))}
+                      {evs &&
+                        [...evs]
+                          .sort((x, y) => (x.ts < y.ts ? -1 : 1))
+                          .map((e) => (
+                            <div key={e.id} style={styles.evRow}>
+                              <span style={{ color: C.inkFaint, minWidth: 50 }}>{fmtTime(e.ts)}</span>
+                              <span style={{ minWidth: 26 }}>
+                                {e.type === "build" ? "+" : "−"}
+                                {e.amount}
+                              </span>
+                              <span style={{ flex: 1 }}>
+                                {e.category}
+                                {e.axis ? <span style={{ color: C.inkFaint }}> · {e.axis}</span> : null}
+                                {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
+                              </span>
+                            </div>
+                          ))}
                     </div>
                   )}
                 </div>
