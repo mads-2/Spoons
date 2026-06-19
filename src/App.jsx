@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
-export const APP_VERSION = "0.13.0";
+export const APP_VERSION = "0.14.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -186,6 +186,9 @@ export default function App() {
   const [adjusting, setAdjusting] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [startNoteDraft, setStartNoteDraft] = useState("");
+  const [dayNoteOpen, setDayNoteOpen] = useState(false);
+  const [dayNoteDraft, setDayNoteDraft] = useState("");
+  const [editTimeId, setEditTimeId] = useState(null);
 
   const isToday = activeDate === todayStr;
 
@@ -233,7 +236,7 @@ export default function App() {
       setLoading(true);
       let d = await sget("day:" + activeDate);
       if (!d) {
-        d = { v: 1, date: activeDate, start: meta.defaultStart, startNote: "", untracked: false, events: [] };
+        d = { v: 1, date: activeDate, start: meta.defaultStart, startNote: "", dayNote: "", untracked: false, events: [] };
       }
       setDay(d);
       setLast(null);
@@ -264,11 +267,18 @@ export default function App() {
     setActiveDate(s);
   }
 
-  async function log(type, axis, category, amount = 1) {
+  async function log(type, axis, category, amount = 1, opts) {
     const now = new Date();
     let ts;
-    if (isToday) ts = now.toISOString();
-    else {
+    let timeUnknown = false;
+    if (opts && opts.timeUnknown) {
+      ts = new Date(activeDate + "T00:00:00").toISOString();
+      timeUnknown = true;
+    } else if (opts && opts.timeStr) {
+      ts = new Date(activeDate + "T" + opts.timeStr + ":00").toISOString();
+    } else if (isToday) {
+      ts = now.toISOString();
+    } else {
       const d = new Date(activeDate + "T00:00:00");
       d.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
       ts = d.toISOString();
@@ -277,6 +287,7 @@ export default function App() {
       id: uid(),
       v: 1,
       ts,
+      timeUnknown,
       type,
       axis,
       category,
@@ -289,6 +300,25 @@ export default function App() {
     setSheet(null);
     setNoteDraft("");
     setEditNote(true);
+  }
+  async function setEventTime(id, timeStr) {
+    const ts = new Date(activeDate + "T" + timeStr + ":00").toISOString();
+    await persist({
+      ...day,
+      events: day.events.map((e) => (e.id === id ? { ...e, ts, timeUnknown: false } : e)),
+    });
+    setEditTimeId(null);
+  }
+  async function setEventUnknown(id) {
+    await persist({
+      ...day,
+      events: day.events.map((e) => (e.id === id ? { ...e, timeUnknown: true } : e)),
+    });
+    setEditTimeId(null);
+  }
+  async function saveDayNote() {
+    await persist({ ...day, dayNote: dayNoteDraft });
+    setDayNoteOpen(false);
   }
   async function setNote(id, note) {
     await persist({
@@ -411,6 +441,47 @@ export default function App() {
               </div>
             </div>
 
+            {!dayNoteOpen ? (
+              day && day.dayNote ? (
+                <button
+                  style={S.dayNoteShow}
+                  onClick={() => {
+                    setDayNoteDraft(day.dayNote || "");
+                    setDayNoteOpen(true);
+                  }}
+                >
+                  “{day.dayNote}”
+                </button>
+              ) : (
+                <button
+                  style={S.ofLine}
+                  onClick={() => {
+                    setDayNoteDraft((day && day.dayNote) || "");
+                    setDayNoteOpen(true);
+                  }}
+                >
+                  + note for the day
+                </button>
+              )
+            ) : (
+              <div style={S.adjustCol}>
+                <span style={{ color: C.inkSoft, fontSize: 13 }}>note for the day</span>
+                <input
+                  autoFocus
+                  value={dayNoteDraft}
+                  placeholder="how the day felt overall…"
+                  onChange={(e) => setDayNoteDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveDayNote();
+                  }}
+                  style={{ ...S.note, flex: "none", width: "100%", minWidth: 0 }}
+                />
+                <button className="pxbtn" style={S.next} onClick={saveDayNote}>
+                  done
+                </button>
+              </div>
+            )}
+
             {adjusting && (
               <div style={S.adjustCol}>
                 <span style={{ color: C.inkSoft, fontSize: 13 }}>today’s start</span>
@@ -444,12 +515,14 @@ export default function App() {
 
             <div style={S.actions}>
               <button
+                className="pxbtn"
                 style={{ ...S.action, background: C.spentBtn }}
                 onClick={() => setSheet("drain")}
               >
                 Spent (−)
               </button>
               <button
+                className="pxbtn"
                 style={{ ...S.action, background: C.gainBtn }}
                 onClick={() => setSheet("build")}
               >
@@ -462,23 +535,43 @@ export default function App() {
                 {[...day.events]
                   .sort((x, y) => (x.ts < y.ts ? 1 : -1))
                   .map((e) => (
-                    <div key={e.id} style={S.entryRow}>
-                      <span style={{ color: C.inkFaint, minWidth: 48 }}>{fmtTime(e.ts)}</span>
-                      <span style={{ minWidth: 26 }}>
-                        {e.type === "build" ? "+" : "−"}
-                        {e.amount}
-                      </span>
-                      <span style={{ flex: 1 }}>
-                        {e.category}
-                        {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
-                      </span>
-                      <button
-                        style={S.remove}
-                        onClick={() => removeEvent(e.id)}
-                        aria-label="remove entry"
-                      >
-                        ×
-                      </button>
+                    <div key={e.id}>
+                      <div style={S.entryRow}>
+                        <button
+                          style={S.entryTime}
+                          onClick={() => setEditTimeId(editTimeId === e.id ? null : e.id)}
+                        >
+                          {e.timeUnknown ? "?" : fmtTime(e.ts)}
+                        </button>
+                        <span style={{ minWidth: 26 }}>
+                          {e.type === "build" ? "+" : "−"}
+                          {e.amount}
+                        </span>
+                        <span style={{ flex: 1 }}>
+                          {e.category}
+                          {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
+                        </span>
+                        <button
+                          style={S.remove}
+                          onClick={() => removeEvent(e.id)}
+                          aria-label="remove entry"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {editTimeId === e.id && (
+                        <div style={S.timeEditRow}>
+                          <input
+                            type="time"
+                            defaultValue={e.timeUnknown ? "" : new Date(e.ts).toTimeString().slice(0, 5)}
+                            onChange={(ev) => ev.target.value && setEventTime(e.id, ev.target.value)}
+                            style={S.timeInput}
+                          />
+                          <button style={S.skipBtn} onClick={() => setEventUnknown(e.id)}>
+                            set ?
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
               </div>
@@ -511,9 +604,10 @@ export default function App() {
       {sheet && (
         <Sheet
           mode={sheet}
+          askTime={!isToday}
           onClose={() => setSheet(null)}
-          onPick={(axis, cat, amount) =>
-            log(sheet === "build" ? "build" : "drain", axis, cat, amount)
+          onLog={(axis, cat, amount, opts) =>
+            log(sheet === "build" ? "build" : "drain", axis, cat, amount, opts)
           }
         />
       )}
@@ -521,12 +615,24 @@ export default function App() {
   );
 }
 
-function Sheet({ mode, onPick, onClose }) {
+function Sheet({ mode, onLog, onClose, askTime }) {
   const [amount, setAmount] = useState(1);
-  const [step, setStep] = useState("count");
+  const [step, setStep] = useState("count"); // count | category | time
+  const [picked, setPicked] = useState(null);
+  const [timeStr, setTimeStr] = useState("");
   const groups = mode === "build" ? BUILDS : DRAINS;
   const order = ["mental", "physical"];
   const heading = mode === "build" ? "Gained" : "Spent";
+
+  function choose(axis, cat) {
+    if (askTime) {
+      setPicked({ axis, cat });
+      setStep("time");
+    } else {
+      onLog(axis, cat, amount);
+    }
+  }
+
   return (
     <div style={styles.scrim} onClick={onClose}>
       <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
@@ -538,6 +644,7 @@ function Sheet({ mode, onPick, onClose }) {
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
                   key={n}
+                  className="pxbtn"
                   style={styles.quick(amount === n)}
                   onClick={() => {
                     setAmount(n);
@@ -549,15 +656,15 @@ function Sheet({ mode, onPick, onClose }) {
               ))}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <button style={styles.step} onClick={() => setAmount((a) => Math.max(1, a - 1))}>−</button>
+              <button className="pxbtn" style={styles.step} onClick={() => setAmount((a) => Math.max(1, a - 1))}>−</button>
               <span style={{ fontSize: 24, minWidth: 30, textAlign: "center" }}>{amount}</span>
-              <button style={styles.step} onClick={() => setAmount((a) => a + 1)}>+</button>
+              <button className="pxbtn" style={styles.step} onClick={() => setAmount((a) => a + 1)}>+</button>
             </div>
-            <button style={styles.next} onClick={() => setStep("category")}>
+            <button className="pxbtn" style={styles.next} onClick={() => setStep("category")}>
               next — pick a category
             </button>
           </div>
-        ) : (
+        ) : step === "category" ? (
           <div>
             <button style={styles.back} onClick={() => setStep("count")}>
               ‹ {amount} spoon{amount > 1 ? "s" : ""}
@@ -573,7 +680,7 @@ function Sheet({ mode, onPick, onClose }) {
                         ...styles.chip,
                         background: axis === "physical" ? C.chipPhys : C.chipMent,
                       }}
-                      onClick={() => onPick(axis, cat, amount)}
+                      onClick={() => choose(axis, cat)}
                     >
                       {cat}
                     </button>
@@ -581,6 +688,28 @@ function Sheet({ mode, onPick, onClose }) {
                 </div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div style={styles.countStep}>
+            <button style={styles.back} onClick={() => setStep("category")}>‹ back</button>
+            <div style={styles.sheetTitle}>what time?</div>
+            <input
+              type="time"
+              value={timeStr}
+              onChange={(e) => setTimeStr(e.target.value)}
+              style={styles.timeInput}
+            />
+            <button
+              className="pxbtn"
+              style={{ ...styles.next, opacity: timeStr ? 1 : 0.4 }}
+              disabled={!timeStr}
+              onClick={() => timeStr && onLog(picked.axis, picked.cat, amount, { timeStr })}
+            >
+              log at this time
+            </button>
+            <button style={styles.linkBtn} onClick={() => onLog(picked.axis, picked.cat, amount, { timeUnknown: true })}>
+              no time (?)
+            </button>
           </div>
         )}
       </div>
@@ -618,6 +747,7 @@ function summarize(d) {
   return {
     start: d.start,
     startNote: d.startNote || "",
+    dayNote: d.dayNote || "",
     untracked: !!d.untracked,
     n,
     spent,
@@ -662,7 +792,7 @@ function AxisBar({ label, mental, physical }) {
   const mPct = Math.round((mental / total) * 100);
   return (
     <div>
-      <div style={styles.smallLabel}>{label} — mental vs physical</div>
+      <div className="seclabel" style={styles.smallLabel}>{label} — mental vs physical</div>
       <div style={styles.bar2}>
         <div style={{ ...styles.seg, width: mPct + "%", background: C.chipMent }} />
         <div style={{ ...styles.seg, width: 100 - mPct + "%", background: C.physBar }} />
@@ -806,7 +936,7 @@ function Insights({ active }) {
     <main style={{ ...styles.main, alignItems: "stretch", textAlign: "left", gap: 18 }}>
       <div style={styles.rangeRow}>
         {RANGES.map(([r, label]) => (
-          <button key={r} style={styles.rangeBtn(range === r)} onClick={() => setRange(r)}>
+          <button key={r} className="pxbtn" style={styles.rangeBtn(range === r)} onClick={() => setRange(r)}>
             {label}
           </button>
         ))}
@@ -836,7 +966,7 @@ function Insights({ active }) {
               </div>
 
               <div>
-                <div style={styles.smallLabel}>spent vs gained · by day</div>
+                <div className="seclabel" style={styles.smallLabel}>spent vs gained · by day</div>
                 <SpendGainChart data={chartData} />
                 <div style={styles.legend}>
                   <span>
@@ -865,7 +995,7 @@ function Insights({ active }) {
           )}
 
           <div>
-            <div style={styles.smallLabel}>history</div>
+            <div className="seclabel" style={styles.smallLabel}>history</div>
             {inRange.map((d) => {
               const isOpen = open === d.date;
               const evs = eventsCache[d.date];
@@ -886,6 +1016,12 @@ function Insights({ active }) {
                         <span style={{ minWidth: 26 }}>{d.start}</span>
                         <span style={{ flex: 1, color: C.inkFaint }}>{d.startNote || ""}</span>
                       </div>
+                      {d.dayNote ? (
+                        <div style={{ ...styles.evRow, color: C.inkFaint }}>
+                          <span style={{ minWidth: 50 }}>note</span>
+                          <span style={{ flex: 1 }}>{d.dayNote}</span>
+                        </div>
+                      ) : null}
                       {evs === undefined && (
                         <div style={{ ...styles.evRow, color: C.inkFaint }}>…</div>
                       )}
@@ -897,7 +1033,9 @@ function Insights({ active }) {
                           .sort((x, y) => (x.ts < y.ts ? -1 : 1))
                           .map((e) => (
                             <div key={e.id} style={styles.evRow}>
-                              <span style={{ color: C.inkFaint, minWidth: 50 }}>{fmtTime(e.ts)}</span>
+                              <span style={{ color: C.inkFaint, minWidth: 50 }}>
+                                {e.timeUnknown ? "?" : fmtTime(e.ts)}
+                              </span>
                               <span style={{ minWidth: 26 }}>
                                 {e.type === "build" ? "+" : "−"}
                                 {e.amount}
@@ -928,6 +1066,19 @@ function Style() {
       button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
       button:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 2px; }
       input:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 1px; }
+      .pxbtn { box-shadow: 3px 3px 0 ${C.ink}; }
+      .pxbtn:active { transform: translate(3px, 3px); box-shadow: 0 0 0 ${C.ink}; }
+      .seclabel::before {
+        content: "";
+        display: inline-block;
+        width: 7px; height: 7px;
+        margin-right: 8px;
+        background: ${C.ink};
+        vertical-align: middle;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .pxbtn:active { transform: none; }
+      }
     `}</style>
   );
 }
@@ -1013,6 +1164,36 @@ const styles = {
     borderBottom: `1px solid ${C.line}`,
   },
   remove: { fontSize: 18, color: C.inkFaint, minWidth: 30, minHeight: 30 },
+  entryTime: {
+    color: C.inkSoft,
+    minWidth: 48,
+    textAlign: "left",
+    textDecoration: "underline",
+    minHeight: 28,
+  },
+  timeEditRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "8px 0 12px",
+  },
+  timeInput: {
+    padding: "10px 12px",
+    borderRadius: 0,
+    border: `1px solid ${C.line}`,
+    background: C.surface,
+    fontSize: 14,
+    color: C.ink,
+    fontFamily: MONO,
+  },
+  dayNoteShow: {
+    maxWidth: 320,
+    marginTop: 8,
+    fontSize: 13,
+    color: C.inkSoft,
+    fontStyle: "italic",
+    textAlign: "center",
+  },
   adjust: {
     display: "flex",
     alignItems: "center",

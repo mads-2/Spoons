@@ -3,6 +3,12 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.14.0
+- Overall day note (separate from the start note), shown in history.
+- Pixel styling: hard offset shadows on buttons, square-pixel accents on section labels.
+- Time control: current day defaults to now (editable); old days ask for a time; no time -> shown as '?'.
+- Any entry's time is tappable to set or clear.
+
 ## 0.13.0
 - Structural perf fix: insights now reads a single per-day summary index (1 request) instead of every day's full event log.
 - A day's individual entries load lazily, only when you expand that day.
