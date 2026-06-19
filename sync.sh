@@ -28,5 +28,10 @@ fi
 
 git add -A
 git commit -m "${1:-ui: update from Claude}"
-git push
-echo "✓ committed and pushed."
+
+if git remote get-url origin >/dev/null 2>&1; then
+  git push
+  echo "✓ committed and pushed."
+else
+  echo "✓ committed locally. (No GitHub remote yet — see README 'Connect to GitHub' to set one up; the commit will push next time.)"
+fi

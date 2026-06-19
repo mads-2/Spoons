@@ -12,7 +12,7 @@ Set it up once so the round trip is one command.
 **One time only**
 - Unzip into your project folder (e.g. `/Users/madelinesmac/Spoons`). Do this
   ONCE — re-unzipping later would clobber your git history.
-- Connect to GitHub and push (see "Version control workflow" below).
+- Connect to GitHub and push (see "Connect to GitHub" below).
 
 **Every iteration**
 1. Iterate in your Claude conversation. If that same conversation's artifact is
@@ -42,9 +42,10 @@ The whole app is one component: `src/App.jsx`.
 ## Storage note
 
 In Claude (as an artifact) the app persists to `window.storage`, the key-value
-store tied to your Claude account. Running this repo **locally**, `window.storage`
-doesn't exist, so it falls back to in-memory state that resets on reload — fine
-for UI work. Wiring local persistence (localStorage or a small DB) is a future
+store tied to your Claude account. Persistence only kicks in once the artifact is
+**published** (Pro/Max/Team/Enterprise, on Claude web and desktop); before that,
+and when run **locally** from this repo, `window.storage` is unavailable and the
+app falls back to in-memory state that resets on reload — fine for UI work. Wiring local persistence (localStorage or a small DB) is a future
 step if you want the dev build to remember data.
 
 
@@ -64,12 +65,15 @@ Quick check before pushing: `git status` should never list a spoons file.
 ## Data model
 
 - One record per day under key `day:YYYY-MM-DD` (local date):
-  `{ v, date, start, events: [...] }`
-- `start` = that day's starting spoons (default 12, adjustable).
-- Each event: `{ id, v, ts, type: drain|build, axis: mental|physical|null,
-  category, amount, note, levelBefore }`.
+  `{ v, date, start, startNote, dayNote, untracked, events: [...] }`
+- `start` = that day's starting spoons (default 12, adjustable); `untracked`
+  days are excluded from analytics.
+- Each event: `{ id, v, ts, timeUnknown, type: drain|build,
+  axis: mental|physical|null, category, amount, note, levelBefore }`.
 - Current level is computed (`start − drains + builds`), never stored.
-- Settings live under `meta:v1`. Export bundles all `day:*` keys to JSON.
+- Settings live under `meta:v1`. A per-day summary cache lives under `index:v2`
+  to keep insights fast. Export bundles `day:*` records to JSON (full, or a
+  date range).
 
 ## Version control workflow
 
@@ -91,9 +95,26 @@ When you cut a version, bump `APP_VERSION` in `src/App.jsx` and add a note to
 `CHANGELOG.md`. The version shows in the app header so you always know which
 build you're looking at.
 
-To back it up off your machine, create an empty repo on GitHub and:
+## Connect to GitHub (one time)
+
+The repo is already git-initialized on branch `main` with full history. Pick one:
+
+**Fastest — GitHub CLI** (if you have `gh`; install with `brew install gh`):
 
 ```bash
-git remote add origin <your-repo-url>
+gh auth login                                            # once, if not already
+gh repo create mads-2/spoon-tracker --private --source=. --push
+```
+
+That creates the private repo and pushes everything in one step.
+
+**Manual** — create an empty private repo named `spoon-tracker` on github.com first (no README/license), then:
+
+```bash
+git remote add origin https://github.com/mads-2/spoon-tracker.git
 git push -u origin main
 ```
+
+**Prefer clicks?** Open the folder in GitHub Desktop → "Publish repository" → keep it private.
+
+After this, `./sync.sh "what changed"` pushes every future iteration.

@@ -5,6 +5,7 @@ dist
 *.log
 
 # YOUR SPOON DATA — never commit personal exports/backups
+spoons-*.json
 spoons-export.json
 *.spoons.json
 /data/
