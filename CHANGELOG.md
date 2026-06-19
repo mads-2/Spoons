@@ -3,6 +3,12 @@
 All notable UI/behavior changes, newest first.
 Bump `APP_VERSION` in `src/App.jsx` when you cut a version.
 
+## 0.11.0
+- Spoon redrawn paler to match the reference; center is a light medium-slate, not a dark core.
+- Day navigation: step to previous days (‹ / ›, tap the date to jump back to today) and edit any day.
+- Day's entries now shown as an editable list with per-entry remove (replaces the single undo bar).
+- Design pass via the frontend-design lens (palette/typography/restraint review).
+
 ## 0.10.0
 - Untracked days: mark a day untracked (no expectations); excluded from all analytics, shown labeled in history.
 - Insights history stays visible even when a range has no tracked days.

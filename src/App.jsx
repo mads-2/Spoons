@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-export const APP_VERSION = "0.10.0";
+export const APP_VERSION = "0.11.0";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -19,9 +19,9 @@ const C = {
   physBar: "#5E8CB5",
 };
 
-/* pixel spoon tones — original sprite colors; bowl center (dk) nudged slightly lighter */
-const SPOON_FILL = { hi: "#EAEEF3", li: "#CAD3DF", mid: "#9FAEC0", dk: "#909DAD" };
-const SPOON_SPENT = { hi: "#D7DCE2", li: "#C7CED6", mid: "#B6BFC9", dk: "#A4AEBA" };
+/* pixel spoon tones — paler, matched to reference; medium slate shadow, light centers */
+const SPOON_FILL = { hi: "#EDF1F5", li: "#D4DBE4", mid: "#AEB9C9", dk: "#848FA6" };
+const SPOON_SPENT = { hi: "#E2E5E9", li: "#D2D6DC", mid: "#C0C6CE", dk: "#A7AEBB" };
 
 /* ── categories (states, broad — specifics live in the note) ── */
 const DRAINS = {
@@ -110,21 +110,21 @@ function levelOf(day) {
 const SP = 16;
 const SPRITE = [
   "                ",
-  "          HMMH  ",
-  "         HMDDMH ",
-  "        HMDDDMM ",
-  "        MDDDMLL ",
-  "       HMDDMLLM ",
-  "       HMMMLLM  ",
-  "      HHMLLLM   ",
-  "     DHMLLMM    ",
-  "    DLHMLM      ",
-  "   DLHMM        ",
-  "  DLHM          ",
-  "  DLM           ",
-  " DLM            ",
-  " DM             ",
-  "                ",
+  "          LHHL  ",
+  "         LMDDML ",
+  "        LMMDDMH ",
+  "        MLMMDML ",
+  "       LLLMMMM  ",
+  "      LLLLMMD   ",
+  "      HLLLMD    ",
+  "     HLLLM      ",
+  "    HLLMD       ",
+  "   HLLM         ",
+  "   HLMD         ",
+  "  HLM           ",
+  " HLMD           ",
+  " HLD            ",
+  "  D             ",
 ];
 const TONE = { H: "hi", L: "li", M: "mid", D: "dk" };
 const SPOON_CELLS = [];
@@ -168,8 +168,10 @@ function SpoonCluster({ level, max }) {
 }
 
 export default function App() {
+  const todayStr = new Date().toLocaleDateString("en-CA");
   const [loading, setLoading] = useState(true);
   const [meta, setMeta] = useState({ version: 1, defaultStart: DEFAULT_START });
+  const [activeDate, setActiveDate] = useState(todayStr);
   const [day, setDay] = useState(null);
   const [view, setView] = useState("track");
   const [sheet, setSheet] = useState(null);
@@ -179,33 +181,61 @@ export default function App() {
   const [noteDraft, setNoteDraft] = useState("");
   const [startNoteDraft, setStartNoteDraft] = useState("");
 
+  const isToday = activeDate === todayStr;
+
+  // settings, once
   useEffect(() => {
     (async () => {
       const m = (await sget("meta:v1")) || { version: 1, defaultStart: DEFAULT_START };
-      let d = await sget(dayKey());
-      if (!d) {
-        d = { v: 1, date: dayKey().slice(4), start: m.defaultStart, startNote: "", untracked: false, events: [] };
-        await sset(dayKey(), d);
-      }
       setMeta(m);
-      setDay(d);
-      setLoading(false);
     })();
   }, []);
 
+  // load whichever day is active
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      let d = await sget("day:" + activeDate);
+      if (!d) {
+        d = { v: 1, date: activeDate, start: meta.defaultStart, startNote: "", untracked: false, events: [] };
+      }
+      setDay(d);
+      setLast(null);
+      setEditNote(false);
+      setAdjusting(false);
+      setLoading(false);
+    })();
+  }, [activeDate, meta.defaultStart]);
+
   const persist = useCallback(async (next) => {
     setDay(next);
-    await sset(dayKey(), next);
+    await sset("day:" + next.date, next);
   }, []);
 
   const level = levelOf(day);
   const max = day ? day.start : meta.defaultStart;
 
+  function shiftDate(delta) {
+    const d = new Date(activeDate + "T00:00:00");
+    d.setDate(d.getDate() + delta);
+    const s = d.toLocaleDateString("en-CA");
+    if (s > todayStr) return; // no future
+    setActiveDate(s);
+  }
+
   async function log(type, axis, category, amount = 1) {
+    const now = new Date();
+    let ts;
+    if (isToday) ts = now.toISOString();
+    else {
+      const d = new Date(activeDate + "T00:00:00");
+      d.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+      ts = d.toISOString();
+    }
     const ev = {
       id: uid(),
       v: 1,
-      ts: new Date().toISOString(),
+      ts,
       type,
       axis,
       category,
@@ -224,6 +254,13 @@ export default function App() {
       ...day,
       events: day.events.map((e) => (e.id === id ? { ...e, note } : e)),
     });
+  }
+  async function removeEvent(id) {
+    await persist({ ...day, events: day.events.filter((e) => e.id !== id) });
+    if (last && last.id === id) {
+      setLast(null);
+      setEditNote(false);
+    }
   }
   async function undo(id) {
     await persist({ ...day, events: day.events.filter((e) => e.id !== id) });
@@ -287,6 +324,18 @@ export default function App() {
 
         {view === "track" ? (
           <main style={S.main}>
+            <div style={S.dateNav}>
+              <button style={S.navArrow} onClick={() => shiftDate(-1)} aria-label="previous day">‹</button>
+              <button style={S.dateLabel} onClick={() => setActiveDate(todayStr)}>
+                {isToday ? "today" : fmtDay(activeDate)}
+              </button>
+              <button
+                style={{ ...S.navArrow, opacity: isToday ? 0.3 : 1 }}
+                disabled={isToday}
+                onClick={() => shiftDate(1)}
+                aria-label="next day"
+              >›</button>
+            </div>
             {day && day.untracked ? (
               <div style={S.untrackedPanel}>
                 <p style={S.untrackedMsg}>
@@ -357,23 +406,30 @@ export default function App() {
               <button style={S.action} onClick={() => setSheet("build")}>Gained (+)</button>
             </div>
 
-            {last && (
-              <div style={S.undobar}>
-                <span style={{ color: C.inkSoft, fontSize: 13 }}>
-                  {last.type === "build" ? "Gained" : "Spent"} {last.amount} · {last.category}
-                </span>
-                <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-                  <button
-                    style={S.mini}
-                    onClick={() => {
-                      setNoteDraft((last && last.note) || "");
-                      setEditNote(true);
-                    }}
-                  >
-                    note
-                  </button>
-                  <button style={S.miniUndo} onClick={() => undo(last.id)}>undo</button>
-                </div>
+            {day && day.events.length > 0 && (
+              <div style={S.entries}>
+                {[...day.events]
+                  .sort((x, y) => (x.ts < y.ts ? 1 : -1))
+                  .map((e) => (
+                    <div key={e.id} style={S.entryRow}>
+                      <span style={{ color: C.inkFaint, minWidth: 48 }}>{fmtTime(e.ts)}</span>
+                      <span style={{ minWidth: 26 }}>
+                        {e.type === "build" ? "+" : "−"}
+                        {e.amount}
+                      </span>
+                      <span style={{ flex: 1 }}>
+                        {e.category}
+                        {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
+                      </span>
+                      <button
+                        style={S.remove}
+                        onClick={() => removeEvent(e.id)}
+                        aria-label="remove entry"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
               </div>
             )}
             {last && editNote && (
@@ -397,7 +453,7 @@ export default function App() {
             )}
           </main>
         ) : (
-          <Insights today={day} />
+          <Insights today={isToday ? day : null} />
         )}
       </div>
 
@@ -825,6 +881,38 @@ const styles = {
   count: { fontSize: 40, fontWeight: 500, lineHeight: 1, letterSpacing: -0.5 },
   countOf: { fontSize: 20, fontWeight: 400, color: C.inkFaint },
   ofLine: { fontSize: 13, color: C.inkSoft, marginTop: 6, textDecoration: "underline" },
+  dateNav: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 18,
+    width: "100%",
+    paddingBottom: 8,
+  },
+  navArrow: { fontSize: 22, color: C.inkSoft, minWidth: 36, minHeight: 36 },
+  dateLabel: {
+    fontSize: 13,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: C.ink,
+    minHeight: 36,
+    minWidth: 120,
+  },
+  entries: {
+    width: "100%",
+    marginTop: 16,
+    borderTop: `1px solid ${C.line}`,
+  },
+  entryRow: {
+    display: "flex",
+    gap: 10,
+    alignItems: "center",
+    padding: "9px 0",
+    fontSize: 13,
+    color: C.ink,
+    borderBottom: `1px solid ${C.line}`,
+  },
+  remove: { fontSize: 18, color: C.inkFaint, minWidth: 30, minHeight: 30 },
   adjust: {
     display: "flex",
     alignItems: "center",
