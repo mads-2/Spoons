@@ -689,9 +689,7 @@ export default function App() {
       <Style />
       <div style={S.col}>
         <header style={S.bar}>
-          <span style={S.wordmark}>
-            spoons <span style={S.ver}>v{APP_VERSION}</span>
-          </span>
+          <span style={S.wordmark}>spoons</span>
           <nav style={{ display: "flex", gap: 16 }}>
             <button style={S.navlink(view === "track")} onClick={() => setView("track")}>
               track
@@ -1652,8 +1650,8 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "16px 22px",
-    paddingTop: "max(16px, env(safe-area-inset-top, 16px))",
+    padding: "10px 22px",
+    paddingTop: 52,
     borderBottom: `1px solid ${C.line}`,
   },
   wordmark: { fontSize: 14, letterSpacing: 2, color: C.ink, textTransform: "uppercase" },
@@ -1670,7 +1668,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    padding: "16px 22px 40px",
+    padding: "8px 22px 40px",
     gap: 8,
   },
   cluster: {
