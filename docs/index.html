@@ -40,7 +40,7 @@
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useRef } = React;
 
-const APP_VERSION = "0.17.0";
+const APP_VERSION = "0.17.1";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -81,7 +81,7 @@ const DRAINS = {
     "food / drink",
     "sleep / tiredness",
     "health issues",
-    "not moving enough",
+    "physical exertion",
     "other",
   ],
 };
@@ -96,36 +96,15 @@ const BUILDS = {
   ],
 };
 
-/* ── storage: on-device localStorage first; window.storage if this runs
-   inside Claude; in-memory as a last resort. All guarded so a blocked store
-   never throws — the UI just falls back. ─────────────────────────────── */
+/* ── storage: window.storage when present, in-memory otherwise ─ */
 const mem = new Map();
-const hasClaude =
+const hasStore =
   typeof window !== "undefined" && window.storage && window.storage.get;
-let hasLS = false;
-try {
-  if (typeof localStorage !== "undefined") {
-    const t = "__spoons_probe__";
-    localStorage.setItem(t, "1");
-    localStorage.removeItem(t);
-    hasLS = true;
-  }
-} catch {
-  hasLS = false;
-}
 async function sget(key) {
-  if (hasClaude) {
+  if (hasStore) {
     try {
       const r = await window.storage.get(key);
       return r ? JSON.parse(r.value) : null;
-    } catch {
-      return null;
-    }
-  }
-  if (hasLS) {
-    try {
-      const v = localStorage.getItem(key);
-      return v != null ? JSON.parse(v) : null;
     } catch {
       return null;
     }
@@ -134,34 +113,22 @@ async function sget(key) {
 }
 async function sset(key, val) {
   const v = JSON.stringify(val);
-  if (hasClaude) {
-    try { await window.storage.set(key, v); } catch {}
-    return;
+  if (hasStore) {
+    try {
+      await window.storage.set(key, v);
+    } catch {
+      /* swallow; UI already holds state */
+    }
+  } else {
+    mem.set(key, v);
   }
-  if (hasLS) {
-    try { localStorage.setItem(key, v); } catch {}
-    return;
-  }
-  mem.set(key, v);
 }
 async function slist(prefix) {
-  if (hasClaude) {
+  if (hasStore) {
     try {
       const r = await window.storage.list(prefix);
       const keys = (r && r.keys) || [];
       return keys.map((k) => (typeof k === "string" ? k : k.key));
-    } catch {
-      return [];
-    }
-  }
-  if (hasLS) {
-    try {
-      const out = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith(prefix)) out.push(k);
-      }
-      return out;
     } catch {
       return [];
     }
@@ -246,6 +213,287 @@ function SpoonCluster({ level, max }) {
   );
 }
 
+/* ── pixel check / X icons (decorative, matched to reference) ── */
+// 18×18 grid; each cell = 1 unit. Outer border = dark ink, inner = colored face.
+function PixelCheckIcon({ size = 36 }) {
+  // green palette matched to gainBtn / gainBar feel
+  const face  = "#A8D4A0";
+  const hi    = "#C8E8C4";
+  const lo    = "#7AAF74";
+  const dk    = "#9DAAB5";  // light grey border
+  const mark  = "#4A7A44";
+  // 18×18 pixel map (0=empty, 1=dark border, 2=hi, 3=face, 4=lo, 5=checkmark)
+  const G = [
+    "000011111111110000",
+    "000110000000011000",
+    "001023333333320100",
+    "010233333333332010",
+    "010233333333332010",
+    "110233335333332011",
+    "102333353533332101",
+    "102333335333332101",
+    "102333353533332101",// wait, let me do this more carefully
+    "102333335333332101",
+    "102535333353332101",
+    "102353333533332101",
+    "102333333333332101",
+    "010234333333432010",
+    "010233443344332010",
+    "001023333333320100",
+    "000110000000011000",
+    "000011111111110000",
+  ];
+  // Simpler approach — direct rect list
+  const S = size / 18;
+  const rects = [];
+  // border ring
+  const border = [
+    // top edge
+    ...[3,4,5,6,7,8,9,10,11,12,13,14].map(x=>({x,y:0,c:dk})),
+    ...[2,3,14,15].map(x=>({x,y:1,c:dk})),
+    ...[1,2,15,16].map(x=>({x,y:2,c:dk})),
+    ...[1,16].map(x=>({x,y:3,c:dk})),
+    ...[1,16].map(x=>({x,y:4,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:5,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:6,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:7,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:8,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:9,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:10,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:11,c:dk})),
+    ...[1,16].map(x=>({x,y:12,c:dk})),
+    ...[1,16].map(x=>({x,y:13,c:dk})),
+    ...[1,2,15,16].map(x=>({x,y:14,c:dk})),
+    ...[2,3,14,15].map(x=>({x,y:15,c:dk})),
+    ...[3,4,5,6,7,8,9,10,11,12,13,14].map(x=>({x,y:16,c:dk})),
+  ];
+  // face fill rows
+  const faceRows = [
+    {y:2, xs:[3,4,5,6,7,8,9,10,11,12,13,14]},
+    {y:3, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:4, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:5, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:6, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:7, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:8, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:9, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:10,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:11,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:12,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:13,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:14,xs:[3,4,5,6,7,8,9,10,11,12,13,14]},
+  ];
+  faceRows.forEach(({y,xs})=>xs.forEach(x=>rects.push({x,y,c:face})));
+  // highlight stripe top
+  [{x:3,y:2},{x:4,y:2},{x:5,y:2},{x:6,y:2},{x:7,y:2},{x:8,y:2},
+   {x:2,y:3},{x:3,y:3},{x:4,y:3},{x:5,y:3},{x:2,y:4},{x:3,y:4}].forEach(r=>rects.push({...r,c:hi}));
+  // shadow stripe bottom
+  [{x:12,y:13},{x:13,y:13},{x:14,y:13},
+   {x:11,y:14},{x:12,y:14},{x:13,y:14},{x:14,y:14},
+   {x:14,y:12},{x:15,y:11},{x:15,y:12},{x:15,y:13}].forEach(r=>rects.push({...r,c:lo}));
+  // plus sign pixels — vertical + horizontal bars centred on 18×18 face
+  const check = [
+    {x:8,y:4},{x:9,y:4},{x:8,y:5},{x:9,y:5},{x:8,y:6},{x:9,y:6},
+    {x:8,y:7},{x:9,y:7},{x:8,y:8},{x:9,y:8},{x:8,y:9},{x:9,y:9},
+    {x:8,y:10},{x:9,y:10},{x:8,y:11},{x:9,y:11},{x:8,y:12},{x:9,y:12},{x:8,y:13},{x:9,y:13},
+    {x:3,y:8},{x:4,y:8},{x:5,y:8},{x:6,y:8},{x:7,y:8},
+    {x:10,y:8},{x:11,y:8},{x:12,y:8},{x:13,y:8},{x:14,y:8},
+    {x:3,y:9},{x:4,y:9},{x:5,y:9},{x:6,y:9},{x:7,y:9},
+    {x:10,y:9},{x:11,y:9},{x:12,y:9},{x:13,y:9},{x:14,y:9},
+  ];
+  check.forEach(r=>rects.push({...r,c:mark}));
+  border.forEach(r=>rects.push(r));
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" shapeRendering="crispEdges" aria-hidden="true" style={{display:"block",flexShrink:0}}>
+      {rects.map((r,i)=><rect key={i} x={r.x} y={r.y} width={1} height={1} fill={r.c}/>)}
+    </svg>
+  );
+}
+
+function PixelXIcon({ size = 36 }) {
+  const face = "#C9898C";
+  const hi   = "#DDB0B2";
+  const lo   = "#A06264";
+  const dk   = "#9DAAB5";  // light grey border
+  const mark = "#B85A5E";
+  const rects = [];
+  const border = [
+    ...[3,4,5,6,7,8,9,10,11,12,13,14].map(x=>({x,y:0,c:dk})),
+    ...[2,3,14,15].map(x=>({x,y:1,c:dk})),
+    ...[1,2,15,16].map(x=>({x,y:2,c:dk})),
+    ...[1,16].map(x=>({x,y:3,c:dk})),
+    ...[1,16].map(x=>({x,y:4,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:5,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:6,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:7,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:8,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:9,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:10,c:dk})),
+    ...[0,1,16,17].map(x=>({x,y:11,c:dk})),
+    ...[1,16].map(x=>({x,y:12,c:dk})),
+    ...[1,16].map(x=>({x,y:13,c:dk})),
+    ...[1,2,15,16].map(x=>({x,y:14,c:dk})),
+    ...[2,3,14,15].map(x=>({x,y:15,c:dk})),
+    ...[3,4,5,6,7,8,9,10,11,12,13,14].map(x=>({x,y:16,c:dk})),
+  ];
+  const faceRows = [
+    {y:2, xs:[3,4,5,6,7,8,9,10,11,12,13,14]},
+    {y:3, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:4, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:5, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:6, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:7, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:8, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:9, xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:10,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:11,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:12,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:13,xs:[2,3,4,5,6,7,8,9,10,11,12,13,14,15]},
+    {y:14,xs:[3,4,5,6,7,8,9,10,11,12,13,14]},
+  ];
+  faceRows.forEach(({y,xs})=>xs.forEach(x=>rects.push({x,y,c:face})));
+  [{x:3,y:2},{x:4,y:2},{x:5,y:2},{x:6,y:2},{x:7,y:2},{x:8,y:2},
+   {x:2,y:3},{x:3,y:3},{x:4,y:3},{x:5,y:3},{x:2,y:4},{x:3,y:4}].forEach(r=>rects.push({...r,c:hi}));
+  [{x:12,y:13},{x:13,y:13},{x:14,y:13},
+   {x:11,y:14},{x:12,y:14},{x:13,y:14},{x:14,y:14},
+   {x:14,y:12},{x:15,y:11},{x:15,y:12},{x:15,y:13}].forEach(r=>rects.push({...r,c:lo}));
+  // minus sign pixels — centered in 18×18 grid (x:3..14)
+  const xmark = [
+    {x:3,y:7},{x:4,y:7},{x:5,y:7},{x:6,y:7},{x:7,y:7},{x:8,y:7},{x:9,y:7},{x:10,y:7},{x:11,y:7},{x:12,y:7},{x:13,y:7},{x:14,y:7},
+    {x:3,y:8},{x:4,y:8},{x:5,y:8},{x:6,y:8},{x:7,y:8},{x:8,y:8},{x:9,y:8},{x:10,y:8},{x:11,y:8},{x:12,y:8},{x:13,y:8},{x:14,y:8},
+    {x:3,y:9},{x:4,y:9},{x:5,y:9},{x:6,y:9},{x:7,y:9},{x:8,y:9},{x:9,y:9},{x:10,y:9},{x:11,y:9},{x:12,y:9},{x:13,y:9},{x:14,y:9},
+  ];
+  xmark.forEach(r=>rects.push({...r,c:mark}));
+  border.forEach(r=>rects.push(r));
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" shapeRendering="crispEdges" aria-hidden="true" style={{display:"block",flexShrink:0}}>
+      {rects.map((r,i)=><rect key={i} x={r.x} y={r.y} width={1} height={1} fill={r.c}/>)}
+    </svg>
+  );
+}
+
+/* ── pixel-art button frame (LOAD/SAVE style) ────────────────── */
+function PixelButton({ onClick, color, children, style: extraStyle }) {
+  const isRed = color === "red";
+  const face = isRed ? "#EDD8D8" : "#D4E8E9";
+  const hi   = isRed ? "#F5EAEA" : "#E6F3F4";
+  const lo   = isRed ? "#CDBABA" : "#AECBCC";
+  const ring = isRed ? "#CBBFBF" : "#AABFC0";  // single outer ring
+  const sh   = "#C8D2D8";                        // 1px shadow
+
+  const W = 80, H = 24;
+  const rects = [];
+  const p = (x, y, c) => rects.push({ x, y, c });
+
+  // single-pixel outer ring with notched corners
+  for (let x = 1; x <= W - 2; x++) { p(x, 0, ring); p(x, H - 2, ring); }
+  for (let y = 1; y <= H - 3; y++) { p(0, y, ring); p(W - 1, y, ring); }
+
+  // 1px drop shadow only
+  for (let x = 1; x <= W - 1; x++) p(x, H - 1, sh);
+  for (let y = 1; y <= H - 1; y++) p(W, y, sh);
+
+  // face fill — full interior
+  for (let y = 1; y <= H - 3; y++)
+    for (let x = 1; x <= W - 2; x++)
+      p(x, y, face);
+
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        position: "relative",
+        width: "100%",
+        minHeight: 58,
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        ...extraStyle,
+      }}
+    >
+      <svg
+        viewBox={`0 0 ${W + 1} ${H}`}
+        preserveAspectRatio="none"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+        shapeRendering="crispEdges"
+        aria-hidden="true"
+      >
+        {rects.map((r, i) => (
+          <rect key={i} x={r.x} y={r.y} width={1} height={1} fill={r.c} />
+        ))}
+      </svg>
+      <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 14, color: isRed ? "#8A5A5A" : "#4A7A7C", fontSize: 17 }}>
+        {children}
+      </span>
+    </button>
+  );
+}
+
+/* ── small outline pixel button ── */
+/* ── shared pixel frame SVG builder ── */
+function PixelFrame({ W, H, color = "#B0BCC6", shadow = "#C8D2D8", face = C.surface, children, onClick, style: extra, textStyle }) {
+  const rects = [];
+  const p = (x, y, c) => rects.push({ x, y, c });
+
+  // single outer ring (notched corners)
+  for (let x = 1; x <= W-2; x++) { p(x, 0, color); p(x, H-2, color); }
+  for (let y = 1; y <= H-3; y++) { p(0, y, color); p(W-1, y, color); }
+
+  // face fill
+  for (let y = 1; y <= H-3; y++)
+    for (let x = 1; x <= W-2; x++)
+      p(x, y, face);
+
+  // 1px drop shadow
+  for (let x = 2; x <= W; x++) p(x, H-1, shadow);
+  for (let y = 1; y <= H-1; y++) p(W, y, shadow);
+
+  return (
+    <button onClick={onClick} style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer", ...extra }}>
+      <svg viewBox={`0 0 ${W+1} ${H}`} preserveAspectRatio="none" shapeRendering="crispEdges" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+        {rects.map((r, i) => <rect key={i} x={r.x} y={r.y} width={1} height={1} fill={r.c} />)}
+      </svg>
+      <span style={{ position: "relative", ...textStyle }}>{children}</span>
+    </button>
+  );
+}
+
+function SmallPixelBtn({ onClick, children }) {
+  return (
+    <PixelFrame
+      W={32} H={12}
+      color="#BBBBC6"
+      shadow="#C8D2D8"
+      face={C.surface}
+      onClick={onClick}
+      style={{ padding: "7px 13px", fontSize: 12, color: C.inkSoft, letterSpacing: 0.3 }}
+      textStyle={{ transform: "translateY(-3px)" }}
+    >
+      {children}
+    </PixelFrame>
+  );
+}
+
+function CategoryBtn({ onClick, children, face }) {
+  return (
+    <PixelFrame
+      W={32} H={14}
+      color="#BBBBC6"
+      shadow="#C8D2D8"
+      face={face || C.surface}
+      onClick={onClick}
+      style={{ padding: "10px 16px", fontSize: 14, color: C.ink, minHeight: 48 }}
+      textStyle={{ transform: "translateY(-2px)" }}
+    >
+      {children}
+    </PixelFrame>
+  );
+}
+
 function App() {
   const todayStr = new Date().toLocaleDateString("en-CA");
   const [loading, setLoading] = useState(true);
@@ -265,6 +513,7 @@ function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const isToday = activeDate === todayStr;
 
@@ -500,9 +749,35 @@ function App() {
           <main style={S.main}>
             <div style={S.dateNav}>
               <button style={S.navArrow} onClick={() => shiftDate(-1)} aria-label="previous day">‹</button>
-              <button style={S.dateLabel} onClick={() => setActiveDate(todayStr)}>
-                {isToday ? "today" : fmtDay(activeDate)}
-              </button>
+              <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <button style={S.dateLabel} onClick={() => setDatePickerOpen(v => !v)}>
+                  {isToday ? "today" : fmtDay(activeDate)}
+                </button>
+                {datePickerOpen && (
+                  <input
+                    type="date"
+                    max={todayStr}
+                    value={activeDate}
+                    onChange={(e) => { if (e.target.value) { setActiveDate(e.target.value); setDatePickerOpen(false); } }}
+                    onBlur={() => setDatePickerOpen(false)}
+                    autoFocus
+                    style={{
+                      position: "absolute",
+                      top: "110%",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      zIndex: 10,
+                      padding: "8px 10px",
+                      background: C.surface,
+                      border: `1px solid #BBBBC6`,
+                      borderRadius: 0,
+                      fontSize: 14,
+                      color: C.ink,
+                      fontFamily: MONO,
+                    }}
+                  />
+                )}
+              </div>
               <button
                 style={{ ...S.navArrow, opacity: isToday ? 0.3 : 1 }}
                 disabled={isToday}
@@ -528,19 +803,18 @@ function App() {
                 {level}
                 <span style={S.countOf}> / {max}</span>
               </div>
-              <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
-                <button
-                  style={S.ofLine}
+              <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 8 }}>
+                <SmallPixelBtn
                   onClick={() => {
                     if (!adjusting) setStartNoteDraft((day && day.startNote) || "");
                     setAdjusting((v) => !v);
                   }}
                 >
                   adjust start
-                </button>
-                <button style={S.ofLine} onClick={() => setUntracked(true)}>
+                </SmallPixelBtn>
+                <SmallPixelBtn onClick={() => setUntracked(true)}>
                   mark untracked
-                </button>
+                </SmallPixelBtn>
               </div>
             </div>
 
@@ -556,32 +830,71 @@ function App() {
                   “{day.dayNote}”
                 </button>
               ) : (
-                <button
-                  style={S.ofLine}
+                <SmallPixelBtn
                   onClick={() => {
                     setDayNoteDraft((day && day.dayNote) || "");
                     setDayNoteOpen(true);
                   }}
                 >
                   + note for the day
-                </button>
+                </SmallPixelBtn>
               )
             ) : (
-              <div style={S.adjustCol}>
-                <span style={{ color: C.inkSoft, fontSize: 13 }}>note for the day</span>
-                <input
-                  autoFocus
-                  value={dayNoteDraft}
-                  placeholder="how the day felt overall…"
-                  onChange={(e) => setDayNoteDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveDayNote();
-                  }}
-                  style={{ ...S.note, flex: "none", width: "100%", minWidth: 0 }}
-                />
-                <button className="pxbtn" style={S.next} onClick={saveDayNote}>
-                  done
-                </button>
+              <div style={{
+                width: "100%",
+                maxWidth: 320,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                alignSelf: "center",
+              }}>
+                <span style={{ color: C.inkSoft, fontSize: 11, letterSpacing: 1, textTransform: "uppercase" }}>note for the day</span>
+                <div style={{
+                  position: "relative",
+                  background: "#F5F0E8",
+                  border: `1px solid ${C.line}`,
+                  boxShadow: `2px 2px 0 ${C.line}`,
+                }}>
+                  {/* left margin rule */}
+                  <div style={{
+                    position: "absolute",
+                    left: 28,
+                    top: 0,
+                    bottom: 0,
+                    width: 1,
+                    background: "#D9A8A8",
+                    opacity: 0.6,
+                  }} />
+                  <textarea
+                    autoFocus
+                    value={dayNoteDraft}
+                    placeholder="how the day felt overall…"
+                    onChange={(e) => setDayNoteDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) saveDayNote(); }}
+                    rows={5}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "10px 12px 10px 38px",
+                      background: "transparent",
+                      border: "none",
+                      outline: "none",
+                      resize: "none",
+                      fontSize: 13,
+                      lineHeight: "24px",
+                      color: C.ink,
+                      fontFamily: MONO,
+                      // ruled lines at 24px intervals matching lineHeight
+                      backgroundImage: "repeating-linear-gradient(transparent, transparent 22px, #C8C0B0 22px, #C8C0B0 23px)",
+                      backgroundPositionY: "10px",
+                      backgroundAttachment: "local",
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button style={S.skipBtn} onClick={() => setDayNoteOpen(false)}>cancel</button>
+                  <button className="pxbtn" style={S.next} onClick={saveDayNote}>done</button>
+                </div>
               </div>
             )}
 
@@ -617,20 +930,14 @@ function App() {
             )}
 
             <div style={S.actions}>
-              <button
-                className="pxbtn"
-                style={{ ...S.action, background: C.spentBtn }}
-                onClick={() => setSheet("drain")}
-              >
-                Spent (−)
-              </button>
-              <button
-                className="pxbtn"
-                style={{ ...S.action, background: C.gainBtn }}
-                onClick={() => setSheet("build")}
-              >
-                Gained (+)
-              </button>
+              <PixelButton color="red" onClick={() => setSheet("drain")}>
+                <div style={{marginLeft: -10}}><PixelXIcon size={36} /></div>
+                Spent
+              </PixelButton>
+              <PixelButton color="green" onClick={() => setSheet("build")}>
+                <PixelCheckIcon size={36} />
+                Gained
+              </PixelButton>
             </div>
 
             {day && day.events.length > 0 && (
@@ -843,16 +1150,13 @@ function Sheet({ mode, onLog, onClose, askTime }) {
                 <div style={styles.axisLabel}>{axis}</div>
                 <div style={styles.chips}>
                   {groups[axis].map((cat) => (
-                    <button
+                    <CategoryBtn
                       key={cat}
-                      style={{
-                        ...styles.chip,
-                        background: axis === "physical" ? C.chipPhys : C.chipMent,
-                      }}
+                      face={axis === "physical" ? C.chipPhys : C.chipMent}
                       onClick={() => choose(axis, cat)}
                     >
                       {cat}
-                    </button>
+                    </CategoryBtn>
                   ))}
                 </div>
               </div>
@@ -1028,11 +1332,11 @@ function AxisBar({ label, mental, physical }) {
   );
 }
 const RANGES = [
-  ["day", "day"],
   ["week", "week"],
   ["month", "month"],
   ["year", "year"],
   ["all", "all time"],
+  ["custom", "custom"],
 ];
 const fmtDay = (s) =>
   new Date(s + "T00:00").toLocaleDateString(undefined, {
@@ -1108,9 +1412,14 @@ function SpendGainChart({ data }) {
 function Insights({ active }) {
   const [idx, setIdx] = useState(null);
   const [range, setRange] = useState("week");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState(new Date().toLocaleDateString("en-CA"));
   const [open, setOpen] = useState(null);
   const [eventsCache, setEventsCache] = useState({});
 
+  const todayStr = new Date().toLocaleDateString("en-CA");
+
+  // Load index and merge any custom-range days that might predate the 60-day seed
   useEffect(() => {
     (async () => {
       const i = (await sget("index:v2")) || { v: 1, days: {} };
@@ -1120,11 +1429,30 @@ function Insights({ active }) {
     })();
   }, [active]);
 
+  // When custom range changes, load any days not already in idx
+  useEffect(() => {
+    if (range !== "custom" || !customFrom || !customTo || !idx) return;
+    (async () => {
+      const cur = new Date(customFrom + "T00:00:00");
+      const end = new Date(customTo + "T00:00:00");
+      const missing = [];
+      while (cur <= end) {
+        const ds = cur.toLocaleDateString("en-CA");
+        if (!(ds in idx)) missing.push(ds);
+        cur.setDate(cur.getDate() + 1);
+      }
+      if (!missing.length) return;
+      const loaded = await Promise.all(missing.map(async (ds) => {
+        try { const d = await sget("day:" + ds); return d ? [ds, summarize(d)] : null; } catch { return null; }
+      }));
+      const patch = {};
+      loaded.forEach(r => { if (r) patch[r[0]] = r[1]; });
+      if (Object.keys(patch).length) setIdx(prev => ({ ...prev, ...patch }));
+    })();
+  }, [range, customFrom, customTo, idx]);
+
   async function toggleDay(date) {
-    if (open === date) {
-      setOpen(null);
-      return;
-    }
+    if (open === date) { setOpen(null); return; }
     setOpen(date);
     if (eventsCache[date] === undefined) {
       try {
@@ -1143,17 +1471,28 @@ function Insights({ active }) {
       </main>
     );
 
-  const cut = rangeCutoff(range);
+  // Compute cutoff
+  let cut = null;
+  let cutEnd = null;
+  if (range === "custom") {
+    cut = customFrom || null;
+    cutEnd = customTo || todayStr;
+  } else {
+    cut = rangeCutoff(range);
+  }
+
   const inRange = Object.keys(idx)
-    .filter((d) => !cut || d >= cut)
+    .filter((d) => {
+      if (cut && d < cut) return false;
+      if (cutEnd && d > cutEnd) return false;
+      return true;
+    })
     .sort((a, b) => (a < b ? 1 : -1))
     .map((d) => ({ date: d, ...idx[d] }));
+
   const tracked = inRange.filter((d) => !d.untracked);
   const a = aggregateSummaries(tracked);
-  const chartData = [...tracked]
-    .reverse()
-    .slice(-14)
-    .map((d) => ({ d: d.date, s: d.spent, g: d.gained }));
+  const chartData = [...tracked].reverse().slice(-14).map((d) => ({ d: d.date, s: d.spent, g: d.gained }));
   const obs = observations(a);
   const topDrains = topN(a.dCats, 5);
   const topBuilders = topN(a.bCats, 5);
@@ -1167,6 +1506,32 @@ function Insights({ active }) {
           </button>
         ))}
       </div>
+
+      {range === "custom" && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ fontSize: 12, color: C.inkSoft, display: "flex", flexDirection: "column", gap: 3 }}>
+            from
+            <input
+              type="date"
+              value={customFrom}
+              max={customTo || todayStr}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              style={styles.dateInput}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: C.inkSoft, display: "flex", flexDirection: "column", gap: 3 }}>
+            to
+            <input
+              type="date"
+              value={customTo}
+              min={customFrom || undefined}
+              max={todayStr}
+              onChange={(e) => setCustomTo(e.target.value)}
+              style={styles.dateInput}
+            />
+          </label>
+        </div>
+      )}
 
       {inRange.length === 0 ? (
         <p style={{ color: C.inkSoft, fontSize: 14, lineHeight: 1.6 }}>
@@ -1198,11 +1563,7 @@ function Insights({ active }) {
               {obs.length > 0 && (
                 <div>
                   <div className="seclabel" style={styles.smallLabel}>what stands out</div>
-                  {obs.map((o, i) => (
-                    <p key={i} style={styles.obs}>
-                      {o}
-                    </p>
-                  ))}
+                  {obs.map((o, i) => (<p key={i} style={styles.obs}>{o}</p>))}
                 </div>
               )}
 
@@ -1223,12 +1584,8 @@ function Insights({ active }) {
                 <div className="seclabel" style={styles.smallLabel}>spent vs gained · by day</div>
                 <SpendGainChart data={chartData} />
                 <div style={styles.legend}>
-                  <span>
-                    <i style={{ ...styles.swatch, background: C.spentBar }} /> spent
-                  </span>
-                  <span>
-                    <i style={{ ...styles.swatch, background: C.gainBar }} /> gained
-                  </span>
+                  <span><i style={{ ...styles.swatch, background: C.spentBar }} /> spent</span>
+                  <span><i style={{ ...styles.swatch, background: C.gainBar }} /> gained</span>
                 </div>
               </div>
 
@@ -1253,12 +1610,8 @@ function Insights({ active }) {
               return (
                 <div key={d.date} style={styles.dayWrap}>
                   <button style={styles.dayRow} onClick={() => toggleDay(d.date)}>
-                    <span>
-                      {isOpen ? "▾" : "▸"} {fmtDay(d.date)}
-                    </span>
-                    <span style={{ color: C.inkSoft }}>
-                      {d.untracked ? "untracked" : `spent ${d.spent} · back ${d.gained}`}
-                    </span>
+                    <span>{isOpen ? "▾" : "▸"} {fmtDay(d.date)}</span>
+                    <span style={{ color: C.inkSoft }}>{d.untracked ? "untracked" : `spent ${d.spent} · back ${d.gained}`}</span>
                   </button>
                   {isOpen && (
                     <div style={styles.evList}>
@@ -1273,31 +1626,19 @@ function Insights({ active }) {
                           <span style={{ flex: 1 }}>{d.dayNote}</span>
                         </div>
                       ) : null}
-                      {evs === undefined && (
-                        <div style={{ ...styles.evRow, color: C.inkFaint }}>…</div>
-                      )}
-                      {evs && evs.length === 0 && (
-                        <div style={{ ...styles.evRow, color: C.inkFaint }}>no entries</div>
-                      )}
-                      {evs &&
-                        [...evs]
-                          .sort((x, y) => (x.ts < y.ts ? -1 : 1))
-                          .map((e) => (
-                            <div key={e.id} style={styles.evRow}>
-                              <span style={{ color: C.inkFaint, minWidth: 50 }}>
-                                {e.timeUnknown ? "?" : fmtTime(e.ts)}
-                              </span>
-                              <span style={{ minWidth: 26 }}>
-                                {e.type === "build" ? "+" : "−"}
-                                {e.amount}
-                              </span>
-                              <span style={{ flex: 1 }}>
-                                {e.category}
-                                {e.axis ? <span style={{ color: C.inkFaint }}> · {e.axis}</span> : null}
-                                {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
-                              </span>
-                            </div>
-                          ))}
+                      {evs === undefined && (<div style={{ ...styles.evRow, color: C.inkFaint }}>…</div>)}
+                      {evs && evs.length === 0 && (<div style={{ ...styles.evRow, color: C.inkFaint }}>no entries</div>)}
+                      {evs && [...evs].sort((x, y) => (x.ts < y.ts ? -1 : 1)).map((e) => (
+                        <div key={e.id} style={styles.evRow}>
+                          <span style={{ color: C.inkFaint, minWidth: 50 }}>{e.timeUnknown ? "?" : fmtTime(e.ts)}</span>
+                          <span style={{ minWidth: 26 }}>{e.type === "build" ? "+" : "−"}{e.amount}</span>
+                          <span style={{ flex: 1 }}>
+                            {e.category}
+                            {e.axis ? <span style={{ color: C.inkFaint }}> · {e.axis}</span> : null}
+                            {e.note ? <span style={{ color: C.inkFaint }}> — {e.note}</span> : null}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1313,6 +1654,7 @@ function Insights({ active }) {
 function Style() {
   return (
     <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Silkscreen&display=swap');
       * { box-sizing: border-box; }
       button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
       button:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 2px; }
@@ -1334,25 +1676,23 @@ function Style() {
   );
 }
 
-const MONO =
-  'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
+const MONO = '"Silkscreen", ui-monospace, monospace';
 
 const styles = {
   root: {
-    height: "100%",
+    minHeight: "100vh",
     background: C.paper,
     color: C.ink,
     fontFamily: MONO,
     display: "flex",
     justifyContent: "center",
   },
-  col: { width: "100%", maxWidth: 480, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" },
+  col: { width: "100%", maxWidth: 480, display: "flex", flexDirection: "column" },
   bar: {
-    flex: "none",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: "calc(12px + env(safe-area-inset-top)) 22px 12px",
+    padding: "16px 22px",
     borderBottom: `1px solid ${C.line}`,
   },
   wordmark: { fontSize: 14, letterSpacing: 2, color: C.ink, textTransform: "uppercase" },
@@ -1362,20 +1702,14 @@ const styles = {
     letterSpacing: 1,
     textTransform: "uppercase",
     color: on ? C.ink : C.inkFaint,
-    minHeight: 44,
-    padding: "11px 2px",
+    paddingBottom: 2,
     borderBottom: on ? `2px solid ${C.ink}` : "2px solid transparent",
   }),
   main: {
-    flex: 1,
-    minHeight: 0,
-    overflowY: "auto",
-    WebkitOverflowScrolling: "touch",
-    overscrollBehavior: "contain",
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    padding: "16px 22px calc(40px + env(safe-area-inset-bottom))",
+    padding: "16px 22px 40px",
     gap: 8,
   },
   cluster: {
@@ -1398,13 +1732,13 @@ const styles = {
     width: "100%",
     paddingBottom: 8,
   },
-  navArrow: { fontSize: 22, color: C.inkSoft, minWidth: 44, minHeight: 44 },
+  navArrow: { fontSize: 22, color: C.inkSoft, minWidth: 36, minHeight: 36 },
   dateLabel: {
     fontSize: 13,
     letterSpacing: 1,
     textTransform: "uppercase",
     color: C.ink,
-    minHeight: 44,
+    minHeight: 36,
     minWidth: 120,
   },
   entries: {
@@ -1421,13 +1755,13 @@ const styles = {
     color: C.ink,
     borderBottom: `1px solid ${C.line}`,
   },
-  remove: { fontSize: 18, color: C.inkFaint, minWidth: 44, minHeight: 44 },
+  remove: { fontSize: 18, color: C.inkFaint, minWidth: 30, minHeight: 30 },
   entryTime: {
     color: C.inkSoft,
     minWidth: 48,
     textAlign: "left",
     textDecoration: "underline",
-    minHeight: 44,
+    minHeight: 28,
   },
   timeEditRow: {
     display: "flex",
@@ -1466,10 +1800,11 @@ const styles = {
     width: 44,
     height: 44,
     borderRadius: 0,
-    border: `1px solid ${C.line}`,
+    border: `1px solid #BBBBC6`,
     background: C.surfaceDim,
     fontSize: 22,
     color: C.inkSoft,
+    boxShadow: `2px 2px 0 #C8D2D8`,
   },
   linkBtn: { fontSize: 13, color: C.inkSoft },
   adjustCol: {
@@ -1513,7 +1848,7 @@ const styles = {
     width: "100%",
     minHeight: 58,
     background: C.surface,
-    border: `1px solid ${C.ink}`,
+    border: `1px solid #BBBBC6`,
     borderRadius: 0,
     fontSize: 17,
     color: C.ink,
@@ -1552,10 +1887,11 @@ const styles = {
     minHeight: 44,
     padding: "0 18px",
     borderRadius: 0,
-    border: `1px solid ${C.ink}`,
+    border: `1px solid #BBBBC6`,
     background: C.surfaceDim,
     color: C.ink,
     fontSize: 13,
+    boxShadow: `2px 2px 0 #C8D2D8`,
   },
   skipBtn: {
     minHeight: 44,
@@ -1565,6 +1901,7 @@ const styles = {
     background: C.surface,
     color: C.inkSoft,
     fontSize: 13,
+    boxShadow: `2px 2px 0 #C8D2D8`,
   },
   scrim: {
     position: "fixed",
@@ -1580,10 +1917,9 @@ const styles = {
     background: C.paper,
     borderTop: `2px solid ${C.ink}`,
     borderRadius: 0,
-    padding: "10px 20px calc(28px + env(safe-area-inset-bottom))",
-    maxHeight: "82vh",
+    padding: "10px 20px 28px",
+    maxHeight: "78vh",
     overflowY: "auto",
-    WebkitOverflowScrolling: "touch",
   },
   handle: { width: 40, height: 4, background: C.line, margin: "8px auto 18px" },
   exportHint: { fontSize: 13, color: C.inkSoft, lineHeight: 1.5, margin: "6px 0 18px" },
@@ -1593,11 +1929,12 @@ const styles = {
     minHeight: 46,
     padding: "0 14px",
     background: C.surface,
-    border: `1px solid ${C.ink}`,
+    border: `1px solid #BBBBC6`,
     borderRadius: 0,
     fontSize: 14,
     color: C.ink,
     cursor: "pointer",
+    boxShadow: `2px 2px 0 #C8D2D8`,
   },
   exportCustom: { marginBottom: 22 },
   exportDates: { display: "flex", gap: 12, margin: "10px 0 12px" },
@@ -1622,11 +1959,12 @@ const styles = {
     width: "100%",
     minHeight: 46,
     background: C.surfaceDim,
-    border: `1px solid ${C.ink}`,
+    border: `1px solid #BBBBC6`,
     borderRadius: 0,
     fontSize: 14,
     color: C.ink,
     cursor: "pointer",
+    boxShadow: `2px 2px 0 #C8D2D8`,
   },
   countStep: { display: "flex", flexDirection: "column", alignItems: "center", gap: 22, paddingBottom: 10 },
   sheetTitle: { fontSize: 16, color: C.ink, marginTop: 4 },
@@ -1635,19 +1973,21 @@ const styles = {
     width: 50,
     height: 50,
     borderRadius: 0,
-    border: `1px solid ${on ? C.ink : C.line}`,
+    border: `1px solid #BBBBC6`,
     background: on ? C.surfaceDim : C.surface,
     fontSize: 18,
     color: C.ink,
+    boxShadow: `2px 2px 0 #C8D2D8`,
   }),
   next: {
     minHeight: 50,
     padding: "0 24px",
     background: C.surface,
-    border: `1px solid ${C.ink}`,
+    border: `1px solid #BBBBC6`,
     borderRadius: 0,
     fontSize: 15,
     color: C.ink,
+    boxShadow: `2px 2px 0 #C8D2D8`,
   },
   back: { fontSize: 13, color: C.inkSoft, marginBottom: 16, minHeight: 36 },
   axisLabel: {
@@ -1663,10 +2003,11 @@ const styles = {
     minHeight: 48,
     padding: "0 16px",
     background: C.surface,
-    border: `1px solid ${C.line}`,
+    border: `1px solid #BBBBC6`,
     borderRadius: 0,
     fontSize: 14,
     color: C.ink,
+    boxShadow: `2px 2px 0 #C8D2D8`,
   },
   mirror: { width: "100%", border: `1px solid ${C.line}`, borderRadius: 0, background: C.surface },
   mirrorRow: {
@@ -1683,13 +2024,14 @@ const styles = {
     minWidth: 56,
     minHeight: 38,
     padding: "0 6px",
-    border: `1px solid ${on ? C.ink : C.line}`,
+    border: `1px solid #BBBBC6`,
     background: on ? C.surfaceDim : C.surface,
     color: on ? C.ink : C.inkSoft,
     fontSize: 12,
     borderRadius: 0,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+    boxShadow: `2px 2px 0 #C8D2D8`,
   }),
   smallLabel: {
     fontSize: 12,
