@@ -2070,3 +2070,4 @@ const styles = {
   catBar: { height: "100%" },
   catVal: { width: 28, textAlign: "right", color: C.inkSoft },
 };
+
