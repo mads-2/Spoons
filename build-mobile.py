@@ -27,7 +27,7 @@ HEAD_CSS = """
         touch-action: manipulation;
         background: #AEB9C4;
       }
-      #root { width: 100%; height: 100%; }
+      #root { width: 100%; height: 100%; padding-top: env(safe-area-inset-top); }
       input, textarea, [contenteditable] {
         -webkit-user-select: text; user-select: text; touch-action: auto;
       }
