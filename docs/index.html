@@ -511,6 +511,8 @@ function App() {
   const [dayNoteDraft, setDayNoteDraft] = useState("");
   const [editTimeId, setEditTimeId] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState("");
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -715,14 +717,42 @@ function App() {
     setExportOpen(false);
   }
 
-  const S = styles;
+  async function runImport(file) {
+    setImportStatus("importing…");
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.days) throw new Error("invalid format");
+      let count = 0;
+      for (const [key, val] of Object.entries(data.days)) {
+        await sset(key, val);
+        // update index
+        const ds = key.slice(4);
+        let idx = indexRef.current;
+        if (!idx) idx = (await sget("index:v2")) || { v: 1, days: {} };
+        idx.days[ds] = summarize(val);
+        indexRef.current = idx;
+        await sset("index:v2", idx);
+        count++;
+      }
+      // reload current day
+      const d = await sget("day:" + activeDate);
+      if (d) setDay(d);
+      setImportStatus(`✓ imported ${count} day${count !== 1 ? "s" : ""}`);
+      setTimeout(() => { setImportOpen(false); setImportStatus(""); }, 2000);
+    } catch (e) {
+      setImportStatus("✗ couldn't read that file");
+    }
+  }
   if (loading)
     return (
-      <div style={S.root}>
+      <div style={styles.root}>
         <Style />
         <div style={{ color: C.inkSoft, padding: 40 }}>…</div>
       </div>
     );
+
+  const S = styles;
 
   return (
     <div style={S.root}>
@@ -734,6 +764,7 @@ function App() {
             <button style={S.navlink(view === "track")} onClick={() => setView("track")}>track</button>
             <button style={S.navlink(view === "insights")} onClick={() => setView("insights")}>insights</button>
             <button style={S.navlink(false)} onClick={() => setExportOpen(true)}>export</button>
+            <button style={S.navlink(false)} onClick={() => setImportOpen(true)}>import</button>
           </nav>
         </header>
 
@@ -1076,6 +1107,30 @@ function App() {
             <button className="pxbtn" style={styles.exportFull} onClick={() => runExport()}>
               export everything
             </button>
+          </div>
+        </div>
+      )}
+
+      {importOpen && (
+        <div style={styles.scrim} onClick={() => { setImportOpen(false); setImportStatus(""); }}>
+          <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.handle} />
+            <div style={styles.sheetTitle}>import data</div>
+            <p style={styles.exportHint}>Pick a spoons JSON export file to restore your data.</p>
+            {importStatus ? (
+              <p style={{ fontSize: 14, color: C.ink, textAlign: "center", padding: "20px 0" }}>{importStatus}</p>
+            ) : (
+              <label style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: "100%", minHeight: 58, background: C.surface,
+                border: `1px solid #7A8A96`, cursor: "pointer", fontSize: 14,
+                color: C.ink, boxShadow: `2px 2px 0 #C8D2D8`,
+              }}>
+                choose file
+                <input type="file" accept=".json" style={{ display: "none" }}
+                  onChange={(e) => e.target.files[0] && runImport(e.target.files[0])} />
+              </label>
+            )}
           </div>
         </div>
       )}
