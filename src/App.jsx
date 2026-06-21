@@ -1693,8 +1693,10 @@ const styles = {
     fontFamily: MONO,
     display: "flex",
     justifyContent: "center",
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
   },
-  col: { width: "100%", maxWidth: 480, display: "flex", flexDirection: "column" },
+  col: { width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", minHeight: "100%" },
   bar: {
     display: "flex",
     flexDirection: "column",

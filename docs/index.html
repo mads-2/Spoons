@@ -24,7 +24,7 @@
         touch-action: manipulation;
         background: #AEB9C4;
       }
-      #root { width: 100%; height: 100%; padding-top: max(env(safe-area-inset-top), 44px); }
+      #root { width: 100%; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
       input, textarea, [contenteditable] {
         -webkit-user-select: text; user-select: text; touch-action: auto;
       }
@@ -1733,8 +1733,10 @@ const styles = {
     fontFamily: MONO,
     display: "flex",
     justifyContent: "center",
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
   },
-  col: { width: "100%", maxWidth: 480, display: "flex", flexDirection: "column" },
+  col: { width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", minHeight: "100%" },
   bar: {
     display: "flex",
     flexDirection: "column",
