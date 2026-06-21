@@ -1646,7 +1646,7 @@ const styles = {
     alignItems: "center",
     gap: 6,
     padding: "6px 22px 8px",
-    paddingTop: 46,
+    paddingTop: 16,
     borderBottom: `1px solid ${C.line}`,
   },
   wordmark: { fontSize: 14, letterSpacing: 2, color: C.ink, textTransform: "uppercase", textAlign: "center" },
@@ -2065,4 +2065,3 @@ const styles = {
   catBar: { height: "100%" },
   catVal: { width: 28, textAlign: "right", color: C.inkSoft },
 };
-
