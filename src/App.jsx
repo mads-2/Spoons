@@ -689,17 +689,11 @@ export default function App() {
       <Style />
       <div style={S.col}>
         <header style={S.bar}>
-          <span style={S.wordmark}>spoons</span>
-          <nav style={{ display: "flex", gap: 16 }}>
-            <button style={S.navlink(view === "track")} onClick={() => setView("track")}>
-              track
-            </button>
-            <button style={S.navlink(view === "insights")} onClick={() => setView("insights")}>
-              insights
-            </button>
-            <button style={S.navlink(false)} onClick={() => setExportOpen(true)}>
-              export
-            </button>
+          <div style={S.wordmark}>spoons</div>
+          <nav style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+            <button style={S.navlink(view === "track")} onClick={() => setView("track")}>track</button>
+            <button style={S.navlink(view === "insights")} onClick={() => setView("insights")}>insights</button>
+            <button style={S.navlink(false)} onClick={() => setExportOpen(true)}>export</button>
           </nav>
         </header>
 
@@ -1648,13 +1642,14 @@ const styles = {
   col: { width: "100%", maxWidth: 480, display: "flex", flexDirection: "column" },
   bar: {
     display: "flex",
-    justifyContent: "space-between",
+    flexDirection: "column",
     alignItems: "center",
-    padding: "10px 22px",
-    paddingTop: 52,
+    gap: 6,
+    padding: "6px 22px 8px",
+    paddingTop: 46,
     borderBottom: `1px solid ${C.line}`,
   },
-  wordmark: { fontSize: 14, letterSpacing: 2, color: C.ink, textTransform: "uppercase" },
+  wordmark: { fontSize: 14, letterSpacing: 2, color: C.ink, textTransform: "uppercase", textAlign: "center" },
   ver: { fontSize: 11, color: C.inkFaint },
   navlink: (on) => ({
     fontSize: 13,
@@ -2070,4 +2065,3 @@ const styles = {
   catBar: { height: "100%" },
   catVal: { width: 28, textAlign: "right", color: C.inkSoft },
 };
-
