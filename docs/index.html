@@ -73,7 +73,7 @@ const DRAINS = {
     "making mistakes",
     "embarrassment / anxiety / self-doubt",
     "feeling stuck",
-    "undesirable task",
+    "draining task",
     "other",
   ],
   physical: [
@@ -368,6 +368,43 @@ function PixelXIcon({ size = 36 }) {
   );
 }
 
+/* ── pixel notebook icon (blue, for saved day note) ── */
+function PixelNotebookIcon({ size = 30 }) {
+  const cover = "#A8BCDC";   // lighter blue cover
+  const coverHi = "#C4D4EC";
+  const coverLo = "#8CA0C8";
+  const page = "#F2F5FA";
+  const line = "#C8D2E2";
+  const dk = "#9DAAB5";      // lighter grey border
+  const rects = [];
+  const p = (x, y, c) => rects.push({ x, y, c });
+  // 16x16 grid
+  // outer dark border of cover
+  for (let x = 3; x <= 14; x++) { p(x, 1, dk); p(x, 15, dk); }
+  for (let y = 2; y <= 14; y++) { p(2, y, dk); p(14, y, dk); }
+  // spine (left binding)
+  for (let y = 2; y <= 14; y++) { p(3, y, coverLo); p(4, y, coverLo); }
+  // cover fill
+  for (let y = 2; y <= 14; y++)
+    for (let x = 5; x <= 13; x++)
+      p(x, y, cover);
+  // cover highlight top
+  for (let x = 5; x <= 13; x++) p(x, 2, coverHi);
+  // page area (inset right portion)
+  for (let y = 3; y <= 13; y++)
+    for (let x = 6; x <= 12; x++)
+      p(x, y, page);
+  // ruled lines on page
+  for (let x = 7; x <= 11; x++) { p(x, 5, line); p(x, 8, line); p(x, 11, line); }
+  // binding rings
+  p(4, 4, dk); p(4, 8, dk); p(4, 12, dk);
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 17" shapeRendering="crispEdges" aria-hidden="true" style={{ display: "block", flexShrink: 0 }}>
+      {rects.map((r, i) => <rect key={i} x={r.x} y={r.y} width={1} height={1} fill={r.c} />)}
+    </svg>
+  );
+}
+
 /* ── pixel-art button frame (LOAD/SAVE style) ────────────────── */
 function PixelButton({ onClick, color, children, style: extraStyle }) {
   const isRed = color === "red";
@@ -505,6 +542,7 @@ function App() {
   const [startNoteDraft, setStartNoteDraft] = useState("");
   const [dayNoteOpen, setDayNoteOpen] = useState(false);
   const [dayNoteDraft, setDayNoteDraft] = useState("");
+  const [dayNoteExpanded, setDayNoteExpanded] = useState(false);
   const [editTimeId, setEditTimeId] = useState(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -822,7 +860,7 @@ function App() {
                 {level}
                 <span style={S.countOf}> / {max}</span>
               </div>
-              <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 16, justifyContent: "center", alignItems: "center", marginTop: 8 }}>
                 <SmallPixelBtn
                   onClick={() => {
                     if (!adjusting) setStartNoteDraft((day && day.startNote) || "");
@@ -835,20 +873,45 @@ function App() {
                   mark untracked
                 </SmallPixelBtn>
               </div>
+              {day && day.dayNote && !dayNoteOpen && (
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+                  <button
+                    onClick={() => setDayNoteExpanded((v) => !v)}
+                    style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
+                    aria-label="day note"
+                  >
+                    <PixelNotebookIcon size={30} />
+                  </button>
+                </div>
+              )}
+              {day && day.dayNote && !dayNoteOpen && dayNoteExpanded && (
+                <div style={{ width: "100%", maxWidth: 320, alignSelf: "center", margin: "12px auto 0" }}>
+                  <div style={{
+                    position: "relative",
+                    background: "#F5F0E8",
+                    border: `1px solid ${C.line}`,
+                    boxShadow: `2px 2px 0 ${C.line}`,
+                    padding: "10px 12px 10px 38px",
+                    fontSize: 13,
+                    lineHeight: "24px",
+                    color: C.ink,
+                    whiteSpace: "pre-wrap",
+                    textAlign: "left",
+                    backgroundImage: "repeating-linear-gradient(transparent, transparent 22px, #C8C0B0 22px, #C8C0B0 23px)",
+                    backgroundPositionY: "10px",
+                  }}>
+                    <div style={{ position: "absolute", left: 28, top: 0, bottom: 0, width: 1, background: "#D9A8A8", opacity: 0.6 }} />
+                    {day.dayNote}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                    <button style={S.skipBtn} onClick={() => { setDayNoteDraft(day.dayNote || ""); setDayNoteOpen(true); setDayNoteExpanded(false); }}>edit</button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {!dayNoteOpen ? (
-              day && day.dayNote ? (
-                <button
-                  style={S.dayNoteShow}
-                  onClick={() => {
-                    setDayNoteDraft(day.dayNote || "");
-                    setDayNoteOpen(true);
-                  }}
-                >
-                  “{day.dayNote}”
-                </button>
-              ) : (
+              !(day && day.dayNote) ? (
                 <SmallPixelBtn
                   onClick={() => {
                     setDayNoteDraft((day && day.dayNote) || "");
@@ -857,7 +920,7 @@ function App() {
                 >
                   + note for the day
                 </SmallPixelBtn>
-              )
+              ) : null
             ) : (
               <div style={{
                 width: "100%",
