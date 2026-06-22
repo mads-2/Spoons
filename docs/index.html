@@ -96,8 +96,7 @@ const BUILDS = {
   ],
 };
 
-/* ── storage: window.storage when present, in-memory otherwise ─ */
-const mem = new Map();
+/* ── storage: window.storage when present, localStorage otherwise ─ */
 const hasStore =
   typeof window !== "undefined" && window.storage && window.storage.get;
 async function sget(key) {
@@ -105,22 +104,19 @@ async function sget(key) {
     try {
       const r = await window.storage.get(key);
       return r ? JSON.parse(r.value) : null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
-  return mem.has(key) ? JSON.parse(mem.get(key)) : null;
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : null;
+  } catch { return null; }
 }
 async function sset(key, val) {
   const v = JSON.stringify(val);
   if (hasStore) {
-    try {
-      await window.storage.set(key, v);
-    } catch {
-      /* swallow; UI already holds state */
-    }
+    try { await window.storage.set(key, v); } catch {}
   } else {
-    mem.set(key, v);
+    try { localStorage.setItem(key, v); } catch {}
   }
 }
 async function slist(prefix) {
@@ -129,11 +125,11 @@ async function slist(prefix) {
       const r = await window.storage.list(prefix);
       const keys = (r && r.keys) || [];
       return keys.map((k) => (typeof k === "string" ? k : k.key));
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   }
-  return [...mem.keys()].filter((k) => k.startsWith(prefix));
+  try {
+    return Object.keys(localStorage).filter(k => k.startsWith(prefix));
+  } catch { return []; }
 }
 
 /* ── helpers ─────────────────────────────────────────────────── */
