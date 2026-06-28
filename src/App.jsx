@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
-export const APP_VERSION = "0.17.1";
+export const APP_VERSION = "0.20.1";
 
 /* ── liminal blue-gray palette ──────────────────────────────── */
 const C = {
@@ -487,6 +487,228 @@ function CategoryBtn({ onClick, children, face }) {
   );
 }
 
+/* ── time editor for an existing entry ──────────────────────────
+   Holds its own draft so the native picker can't auto-close mid-pick;
+   only commits on "done". */
+function TimeEditRow({ event, onSave, onUnknown }) {
+  const [draft, setDraft] = useState(
+    event.timeUnknown ? "" : new Date(event.ts).toTimeString().slice(0, 5)
+  );
+  return (
+    <div style={styles.timeEditRow}>
+      <input
+        type="time"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        style={styles.timeInput}
+      />
+      <button
+        style={{ ...styles.enter, opacity: draft ? 1 : 0.4 }}
+        disabled={!draft}
+        onClick={() => draft && onSave(draft)}
+      >
+        done
+      </button>
+      <button style={styles.skipBtn} onClick={onUnknown}>
+        set ?
+      </button>
+    </div>
+  );
+}
+
+/* ── morning / night check-in icons ──────────────────────────── */
+const MOON_FACE = ["...........aaaaaaa..........","........aaacccccccaa........",".......aacccccccccccaa......",".....aacccccccdddddddda.....","....aaccccccddddaaaaacda....","...aacccccddddba.....aaaa...","...acccccddddbc.............","..aaccccddddbb..............","..accddcddddab..............",".aacccddddddab..............",".accdcdaaacdab..............",".acccdadddadab..............","accdccddadddab..............","acdcddaaaaadab..............","accddcddacdddb..............","acccddddddddddbc............","acdcdddddddaddaa............","accdcddddddcbaaa............","dacccddddddbaad.............",".acccddddddcac..............",".accddcddddddac............a",".aacccdcddbaaac...........aa","..accccdddddddbb.........aa.","..aaccdcddddcadda......aaca.","...acccdcddddddddaaaaaadca..","...aacccccdddddddddddddca...","....aacccdccdddddddddcca....",".....aacccccccddddcccca.....",".......aacccdcccccccaa......","........aaacccccccaa........","...........aaaaaaa.........."];
+const MOON_NOFACE = ["...........aaaaaaa..........","........aaaacccccaaa........",".......aacccccccccaaaa......",".....aaaccccccddaaa.........","....aaccccccdddaa...........","...aacccccdddaaa............","...acccccdddda..............","..aaccccddddaa..............","..accddcdddaa...............",".aacccddddda................",".accdcddddaa................",".acccdcddda.................","aacdccdddda.................","acdcddcddda.................","accddcdddca.................","acccdddddda.................","acdcdddddda.................","accdcddddda.................","aacccddddda.................",".acccdddddaa................",".accddcdddda................",".aacccdcddbaa...............","..accccddddda...............","..aaccdcddddaa..............","...acccdcddddaa.............","...aacccccddddaaa...........","....aacccdccddddaaa.........",".....aaaccccccddddaaaaa.....",".......aacccdccccccaaa......","........aaaacccccaaa........","...........aaaaaaa.........."];
+const MOON_COL = { a: "#4E69AE", b: "#8094C0", c: "#98B1F0", d: "#C9DCF6" };
+
+function PixelSvg({ cells, w = 24, h = 24 }) {
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" shapeRendering="crispEdges" style={{ display: "block" }}>
+      {cells.map((c, i) => (
+        <rect key={i} x={c.x} y={c.y} width={1} height={1} fill={c.c} />
+      ))}
+    </svg>
+  );
+}
+
+function moonCells(face) {
+  const strs = face ? MOON_FACE : MOON_NOFACE;
+  const out = [];
+  strs.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x];
+      if (ch !== ".") out.push({ x, y, c: MOON_COL[ch] });
+    }
+  });
+  return out;
+}
+function MoonIcon({ face }) {
+  return <PixelSvg cells={moonCells(face)} w={28} h={31} />;
+}
+
+function sunCells(face) {
+  const N = 24, cx = 11.5, cy = 11.5, P = [];
+  const sO = "#E2C24A", sF = "#F7E15A", sH = "#FBEE94", sS = "#EFD256", sR = "#EFCF4E", sRL = "#F6DE72", sBr = "#B07C36", sBl = "#F2A7C3";
+  const set = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < N && y >= 0 && y < N) P.push({ x, y, c }); };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = x - cx, dy = y - cy, d = Math.sqrt(dx * dx + dy * dy);
+    if (d <= 6.6) { if (d > 5.6) set(x, y, sO); else { let c = sF; if (dx < -0.5 && dy < -0.5 && d > 2.5 && d <= 5.0) c = sH; else if (dx > 1 && dy > 1 && d > 4.0) c = sS; set(x, y, c); } }
+  }
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4, ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+    const at = (r, o, c) => set(cx + ux * r + vx * o, cy + uy * r + vy * o, c);
+    if (k % 2 === 0) { at(8.2, 0, sR); at(9.4, 0, sR); at(9.4, 1, sRL); at(9.4, -1, sRL); at(10.6, 0, sR); }
+    else { at(8.2, -0.7, sR); at(9.2, 0.4, sR); at(10.2, -0.4, sRL); }
+  }
+  if (face) {
+    [[7,11],[8,10],[9,11],[14,11],[15,10],[16,11]].forEach((p) => set(p[0], p[1], sBr));
+    [[7,13],[8,13],[15,13],[16,13]].forEach((p) => set(p[0], p[1], sBl));
+    [[10,13],[11,14],[12,14],[13,13]].forEach((p) => set(p[0], p[1], sBr));
+  }
+  return P;
+}
+function SunIcon({ face }) {
+  return <PixelSvg cells={sunCells(face)} />;
+}
+
+function batteryCells(level) {
+  const P = [], OL = "#37404A", EMP = "#D9DEE3";
+  const col = ["#E0524F","#ED9A3E","#ECC53F","#9FC64C","#58AD4F"][level - 1];
+  const set = (x, y, c) => P.push({ x, y, c });
+  for (let x = 10; x <= 13; x++) { set(x, 2, OL); set(x, 3, OL); }
+  for (let x = 7; x <= 16; x++) { set(x, 4, OL); set(x, 22, OL); }
+  for (let y = 4; y <= 22; y++) { set(7, y, OL); set(16, y, OL); }
+  for (let y = 5; y <= 21; y++) for (let x = 8; x <= 15; x++) set(x, y, EMP);
+  const segs = [[19,20],[16,17],[13,14],[10,11],[7,8]];
+  for (let i = 0; i < level; i++) { const yr = segs[i]; for (let yy = yr[0]; yy <= yr[1]; yy++) for (let x = 8; x <= 15; x++) set(x, yy, col); }
+  return P;
+}
+function BatteryIcon({ level }) { return <PixelSvg cells={batteryCells(level)} />; }
+
+function heartCells(level) {
+  const P = [], OUT = "#3A3A44", FILL = "#E0524F", EMP = "#ECE7E0", cx = 11.5;
+  const inside = (x, y) => {
+    const dx = x - cx;
+    const d1 = Math.sqrt((x - 8.5) ** 2 + (y - 9) ** 2);
+    const d2 = Math.sqrt((x - 14.5) ** 2 + (y - 9) ** 2);
+    if (d1 <= 3.5 || d2 <= 3.5) return true;
+    if (y >= 9 && y <= 19 && Math.abs(dx) <= 6.5 * (19 - y) / 10) return true;
+    return false;
+  };
+  const yBot = 19, yTop = 6, f = level / 5, yFill = yBot - f * (yBot - yTop);
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) {
+    if (inside(x, y)) {
+      const b = !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1) || !inside(x, y + 1);
+      P.push({ x, y, c: b ? OUT : (y >= yFill ? FILL : EMP) });
+    }
+  }
+  return P;
+}
+function HeartIcon({ level }) { return <PixelSvg cells={heartCells(level)} />; }
+
+function faceCells(level) {
+  const cx = 11.5, cy = 11.5, P = [];
+  const FILL = ["#E2484A","#ED9A3E","#ECC53F","#9FC64C","#58AD4F"][level - 1];
+  const OUT = ["#B83638","#C9792A","#C9A52C","#7DA436","#3F8C39"][level - 1];
+  const INK = "#2C3640";
+  const set = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && x < 24 && y >= 0 && y < 24) P.push({ x, y, c }); };
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) {
+    const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+    if (d <= 9.2) set(x, y, d > 8.3 ? OUT : FILL);
+  }
+  if (level === 1) {
+    [[6,11],[7,10],[8,10]].forEach((p) => set(p[0], p[1], INK));
+    [[15,10],[16,10],[17,11]].forEach((p) => set(p[0], p[1], INK));
+  } else if (level === 5) {
+    [[8,10],[9,9],[10,10]].forEach((p) => set(p[0], p[1], INK));
+    [[13,10],[14,9],[15,10]].forEach((p) => set(p[0], p[1], INK));
+  } else {
+    [[8,9],[9,9],[8,10],[9,10]].forEach((p) => set(p[0], p[1], INK));
+    [[14,9],[15,9],[14,10],[15,10]].forEach((p) => set(p[0], p[1], INK));
+  }
+  let m;
+  if (level === 1) m = [[8,16],[9,15],[10,14],[11,14],[12,14],[13,15],[14,16]];
+  else if (level === 2) m = [[10,15],[11,14],[12,14],[13,15]];
+  else if (level === 3) m = [[9,14],[10,14],[11,14],[12,14],[13,14]];
+  else if (level === 4) m = [[9,14],[10,15],[11,15],[12,15],[13,14]];
+  else m = [[8,14],[9,15],[10,16],[11,16],[12,16],[13,15],[14,14]];
+  m.forEach((p) => set(p[0], p[1], INK));
+  return P;
+}
+function FaceIcon({ level }) { return <PixelSvg cells={faceCells(level)} />; }
+
+function CheckinButton({ period, logged, lit, onClick }) {
+  const isMorning = period === "morning";
+  const glow = isMorning
+    ? "radial-gradient(circle at 50% 50%, rgba(255,240,158,0.95) 0%, rgba(240,210,96,0.62) 22%, rgba(240,210,96,0.28) 44%, rgba(240,210,96,0.10) 60%, rgba(240,210,96,0) 80%)"
+    : "radial-gradient(circle at 50% 50%, rgba(193,216,255,0.95) 0%, rgba(140,176,240,0.62) 22%, rgba(140,176,240,0.28) 44%, rgba(140,176,240,0.10) 60%, rgba(140,176,240,0) 80%)";
+  return (
+    <button
+      onClick={onClick}
+      aria-label={`${period} check-in`}
+      style={{
+        width: 56, height: 56, border: "none", background: "transparent", padding: 0,
+        cursor: "pointer", position: "relative", overflow: "visible",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      {lit && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute", left: "50%", top: "50%", width: 104, height: 104,
+            transform: "translate(-50%, -50%)", background: glow, pointerEvents: "none",
+          }}
+        />
+      )}
+      <span style={{ position: "relative", width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {isMorning ? <SunIcon face={logged} /> : <MoonIcon face={logged} />}
+      </span>
+    </button>
+  );
+}
+
+function CheckinSheet({ period, initial, onSave, onClose }) {
+  const [cur, setCur] = useState(initial || { physical: null, mental: null, energy: null });
+  const cats = [
+    ["physical", "physical wellness", HeartIcon],
+    ["mental", "mental wellness", FaceIcon],
+    ["energy", "energy level", BatteryIcon],
+  ];
+  return (
+    <div style={styles.scrim} onClick={onClose}>
+      <div style={styles.sheet} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.handle} />
+        <div style={styles.sheetTitle}>{period === "morning" ? "morning mood" : "night mood"}</div>
+        <p style={styles.exportHint}>
+          Tap a level (1 low · 5 high). Leave any blank to skip it.
+        </p>
+        {cats.map(([key, label, Icon]) => (
+          <div key={key} style={{ marginBottom: 14 }}>
+            <div style={styles.checkinCat}>{label}</div>
+            <div style={styles.checkinOpts}>
+              {[1, 2, 3, 4, 5].map((lv) => (
+                <button
+                  key={lv}
+                  onClick={() => setCur((c) => ({ ...c, [key]: c[key] === lv ? null : lv }))}
+                  style={{ ...styles.checkinOpt, ...(cur[key] === lv ? styles.checkinOptSel : null) }}
+                  aria-label={`${label} ${lv}`}
+                >
+                  <Icon level={lv} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <button style={styles.skipBtn} onClick={onClose}>cancel</button>
+          <button className="pxbtn" style={styles.next} onClick={() => onSave(cur)}>save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const todayStr = new Date().toLocaleDateString("en-CA");
   const [loading, setLoading] = useState(true);
@@ -510,11 +732,14 @@ export default function App() {
   const [expFrom, setExpFrom] = useState("");
   const [expTo, setExpTo] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [checkinSheet, setCheckinSheet] = useState(null);
 
   const isToday = activeDate === todayStr;
+  const currentHour = new Date().getHours();
 
   // settings, once
   const indexRef = useRef(null);
+  const dayNoteRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -559,6 +784,7 @@ export default function App() {
       if (!d) {
         d = { v: 1, date: activeDate, start: meta.defaultStart, startNote: "", dayNote: "", untracked: false, events: [] };
       }
+      if (!d.checkins) d.checkins = { morning: null, night: null };
       setDay(d);
       setLast(null);
       setEditNote(false);
@@ -641,6 +867,18 @@ export default function App() {
     await persist({ ...day, dayNote: dayNoteDraft });
     setDayNoteOpen(false);
   }
+  function insertNoteNewline() {
+    const ta = dayNoteRef.current;
+    if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const v = dayNoteDraft;
+    const next = v.slice(0, s) + "\n" + v.slice(e);
+    setDayNoteDraft(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(s + 1, s + 1);
+    });
+  }
   async function setNote(id, note) {
     await persist({
       ...day,
@@ -668,6 +906,10 @@ export default function App() {
   }
   async function saveStartNote() {
     await persist({ ...day, startNote: startNoteDraft });
+  }
+  async function saveCheckin(period, ratings) {
+    await persist({ ...day, checkins: { ...(day.checkins || { morning: null, night: null }), [period]: ratings } });
+    setCheckinSheet(null);
   }
   async function setUntracked(val) {
     await persist({ ...day, untracked: val });
@@ -771,28 +1013,40 @@ export default function App() {
                   {isToday ? "today" : fmtDay(activeDate)}
                 </button>
                 {datePickerOpen && (
-                  <input
-                    type="date"
-                    max={todayStr}
-                    value={activeDate}
-                    onChange={(e) => { if (e.target.value) { setActiveDate(e.target.value); setDatePickerOpen(false); } }}
-                    onBlur={() => setDatePickerOpen(false)}
-                    autoFocus
+                  <div
                     style={{
                       position: "absolute",
                       top: "110%",
                       left: "50%",
                       transform: "translateX(-50%)",
                       zIndex: 10,
-                      padding: "8px 10px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: 8,
                       background: C.surface,
                       border: `1px solid #BBBBC6`,
-                      borderRadius: 0,
-                      fontSize: 14,
-                      color: C.ink,
-                      fontFamily: MONO,
+                      boxShadow: `2px 2px 0 #C8D2D8`,
                     }}
-                  />
+                  >
+                    <input
+                      type="date"
+                      max={todayStr}
+                      value={activeDate}
+                      onChange={(e) => { if (e.target.value) setActiveDate(e.target.value); }}
+                      autoFocus
+                      style={{
+                        padding: "8px 10px",
+                        background: C.surface,
+                        border: `1px solid #BBBBC6`,
+                        borderRadius: 0,
+                        fontSize: 14,
+                        color: C.ink,
+                        fontFamily: MONO,
+                      }}
+                    />
+                    <button style={S.skipBtn} onClick={() => setDatePickerOpen(false)}>done</button>
+                  </div>
                 )}
               </div>
               <button
@@ -833,54 +1087,66 @@ export default function App() {
                   mark untracked
                 </SmallPixelBtn>
               </div>
-              {day && day.dayNote && !dayNoteOpen && (
-                <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-                  <button
-                    onClick={() => setDayNoteExpanded((v) => !v)}
-                    style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}
-                    aria-label="day note"
-                  >
-                    <PixelNotebookIcon size={30} />
-                  </button>
-                </div>
-              )}
-              {day && day.dayNote && !dayNoteOpen && dayNoteExpanded && (
-                <div style={{ width: "100%", maxWidth: 320, alignSelf: "center", margin: "12px auto 0" }}>
-                  <div style={{
-                    position: "relative",
-                    background: "#F5F0E8",
-                    border: `1px solid ${C.line}`,
-                    boxShadow: `2px 2px 0 ${C.line}`,
-                    padding: "10px 12px 10px 38px",
-                    fontSize: 13,
-                    lineHeight: "24px",
-                    color: C.ink,
-                    whiteSpace: "pre-wrap",
-                    textAlign: "left",
-                    backgroundImage: "repeating-linear-gradient(transparent, transparent 22px, #C8C0B0 22px, #C8C0B0 23px)",
-                    backgroundPositionY: "10px",
-                  }}>
-                    <div style={{ position: "absolute", left: 28, top: 0, bottom: 0, width: 1, background: "#D9A8A8", opacity: 0.6 }} />
-                    {day.dayNote}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
-                    <button style={S.skipBtn} onClick={() => { setDayNoteDraft(day.dayNote || ""); setDayNoteOpen(true); setDayNoteExpanded(false); }}>edit</button>
-                  </div>
-                </div>
-              )}
             </div>
 
             {!dayNoteOpen ? (
-              !(day && day.dayNote) ? (
-                <SmallPixelBtn
-                  onClick={() => {
-                    setDayNoteDraft((day && day.dayNote) || "");
-                    setDayNoteOpen(true);
-                  }}
-                >
-                  + note for the day
-                </SmallPixelBtn>
-              ) : null
+              <>
+              <div style={S.checkinRow}>
+                <div style={S.checkinCol}>
+                  <span style={S.checkinLabel}>morning mood</span>
+                  <CheckinButton
+                    period="morning"
+                    logged={!!(day.checkins && day.checkins.morning)}
+                    lit={isToday && currentHour >= 6 && currentHour < 12 && !(day.checkins && day.checkins.morning)}
+                    onClick={() => setCheckinSheet("morning")}
+                  />
+                </div>
+                <div style={S.noteSlot}>
+                  {day && day.dayNote ? (
+                    <button onClick={() => setDayNoteExpanded((v) => !v)} style={S.noteIconBtn} aria-label="day note">
+                      <PixelNotebookIcon size={30} />
+                    </button>
+                  ) : (
+                    <SmallPixelBtn onClick={() => { setDayNoteDraft(""); setDayNoteOpen(true); }}>
+                      + note for the day
+                    </SmallPixelBtn>
+                  )}
+                </div>
+                <div style={S.checkinCol}>
+                  <span style={S.checkinLabel}>night mood</span>
+                  <CheckinButton
+                    period="night"
+                    logged={!!(day.checkins && day.checkins.night)}
+                    lit={isToday && currentHour >= 15 && currentHour < 24 && !(day.checkins && day.checkins.night)}
+                    onClick={() => setCheckinSheet("night")}
+                  />
+                </div>
+              </div>
+                {day && day.dayNote && dayNoteExpanded && (
+                  <div style={{ width: "100%", maxWidth: 320, alignSelf: "center", margin: "12px auto 0" }}>
+                    <div style={{
+                      position: "relative",
+                      background: "#F5F0E8",
+                      border: `1px solid ${C.line}`,
+                      boxShadow: `2px 2px 0 ${C.line}`,
+                      padding: "10px 12px 10px 38px",
+                      fontSize: 13,
+                      lineHeight: "24px",
+                      color: C.ink,
+                      whiteSpace: "pre-wrap",
+                      textAlign: "left",
+                      backgroundImage: "repeating-linear-gradient(transparent, transparent 23px, #C8C0B0 23px, #C8C0B0 24px)",
+                      backgroundPositionY: "10px",
+                    }}>
+                      <div style={{ position: "absolute", left: 28, top: 0, bottom: 0, width: 1, background: "#D9A8A8", opacity: 0.6 }} />
+                      {day.dayNote}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+                      <button style={S.skipBtn} onClick={() => { setDayNoteDraft(day.dayNote || ""); setDayNoteOpen(true); setDayNoteExpanded(false); }}>edit</button>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div style={{
                 width: "100%",
@@ -908,6 +1174,7 @@ export default function App() {
                     opacity: 0.6,
                   }} />
                   <textarea
+                    ref={dayNoteRef}
                     autoFocus
                     value={dayNoteDraft}
                     placeholder="how the day felt overall…"
@@ -927,11 +1194,18 @@ export default function App() {
                       color: C.ink,
                       fontFamily: MONO,
                       // ruled lines at 24px intervals matching lineHeight
-                      backgroundImage: "repeating-linear-gradient(transparent, transparent 22px, #C8C0B0 22px, #C8C0B0 23px)",
+                      backgroundImage: "repeating-linear-gradient(transparent, transparent 23px, #C8C0B0 23px, #C8C0B0 24px)",
                       backgroundPositionY: "10px",
                       backgroundAttachment: "local",
                     }}
                   />
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-start" }}>
+                  <button
+                    style={{ ...S.skipBtn, minWidth: 60 }}
+                    onClick={insertNoteNewline}
+                    title="add a new line"
+                  >↵ line</button>
                 </div>
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                   <button style={S.skipBtn} onClick={() => setDayNoteOpen(false)}>cancel</button>
@@ -1012,17 +1286,11 @@ export default function App() {
                         </button>
                       </div>
                       {editTimeId === e.id && (
-                        <div style={S.timeEditRow}>
-                          <input
-                            type="time"
-                            defaultValue={e.timeUnknown ? "" : new Date(e.ts).toTimeString().slice(0, 5)}
-                            onChange={(ev) => ev.target.value && setEventTime(e.id, ev.target.value)}
-                            style={S.timeInput}
-                          />
-                          <button style={S.skipBtn} onClick={() => setEventUnknown(e.id)}>
-                            set ?
-                          </button>
-                        </div>
+                        <TimeEditRow
+                          event={e}
+                          onSave={(timeStr) => setEventTime(e.id, timeStr)}
+                          onUnknown={() => setEventUnknown(e.id)}
+                        />
                       )}
                     </div>
                   ))}
@@ -1061,6 +1329,15 @@ export default function App() {
           onLog={(axis, cat, amount, opts) =>
             log(sheet === "build" ? "build" : "drain", axis, cat, amount, opts)
           }
+        />
+      )}
+
+      {checkinSheet && day && (
+        <CheckinSheet
+          period={checkinSheet}
+          initial={(day.checkins && day.checkins[checkinSheet]) || null}
+          onSave={(ratings) => saveCheckin(checkinSheet, ratings)}
+          onClose={() => setCheckinSheet(null)}
         />
       )}
 
@@ -1976,6 +2253,7 @@ const styles = {
   scrim: {
     position: "fixed",
     inset: 0,
+    zIndex: 100,
     background: "rgba(28,36,44,0.34)",
     display: "flex",
     alignItems: "flex-end",
@@ -2180,4 +2458,51 @@ const styles = {
   },
   catBar: { height: "100%" },
   catVal: { width: 28, textAlign: "right", color: C.inkSoft },
+  checkinRow: {
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+    gap: 10,
+    width: "100%",
+    marginTop: 2,
+  },
+  checkinCol: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4 },
+  checkinLabel: {
+    fontSize: 9,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: C.inkSoft,
+  },
+  noteSlot: { flex: 1, display: "flex", justifyContent: "center", paddingBottom: 4 },
+  noteIconBtn: {
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+  },
+  checkinCat: {
+    fontSize: 11,
+    color: C.inkSoft,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    margin: "12px 0 6px",
+  },
+  checkinOpts: { display: "flex", gap: 6 },
+  checkinOpt: {
+    width: 48,
+    height: 48,
+    padding: 3,
+    background: C.surface,
+    border: `1px solid ${C.line}`,
+    borderRadius: 0,
+    cursor: "pointer",
+    boxSizing: "border-box",
+  },
+  checkinOptSel: {
+    border: `2px solid ${C.ink}`,
+    background: C.surfaceDim,
+  },
 };
